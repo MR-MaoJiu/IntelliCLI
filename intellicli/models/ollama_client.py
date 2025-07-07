@@ -1,6 +1,8 @@
 import requests
 import json
-from typing import List, Dict, Any
+import base64
+import os
+from typing import List, Dict, Any, Optional
 from .base_llm import BaseLLM
 
 class OllamaClient(BaseLLM):
@@ -20,10 +22,28 @@ class OllamaClient(BaseLLM):
         self.base_url = base_url
         self.api_url = f"{self.base_url}/api/generate"
 
-    def generate(self, prompt: str, **kwargs) -> str:
+    def generate(self, prompt: str, image_path: Optional[str] = None, **kwargs) -> str:
         """
         从 Ollama 模型生成文本响应。
+        支持文本和图像输入。
+        
+        Args:
+            prompt: 文本提示
+            image_path: 可选的图像文件路径
+            **kwargs: 其他生成选项
         """
+        # 如果提供了图像路径，使用视觉生成功能
+        if image_path and os.path.exists(image_path):
+            return self.generate_vision(prompt, image_path, **kwargs)
+        
+        # 检查提示中是否包含图像引用
+        if self._contains_image_reference(prompt):
+            # 尝试从提示中提取图像路径
+            extracted_path = self._extract_image_path(prompt)
+            if extracted_path and os.path.exists(extracted_path):
+                return self.generate_vision(prompt, extracted_path, **kwargs)
+        
+        # 标准文本生成
         payload = {
             "model": self.model_name,
             "prompt": prompt,
@@ -37,6 +57,36 @@ class OllamaClient(BaseLLM):
         except requests.exceptions.RequestException as e:
             print(f"连接到 Ollama 时出错: {e}")
             return "错误: 无法连接到 Ollama 服务。"
+    
+    def _contains_image_reference(self, prompt: str) -> bool:
+        """检查提示中是否包含图像引用"""
+        image_keywords = [
+            "图像", "图片", "照片", "截图", "png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp",
+            "image", "photo", "picture", "screenshot", "看图", "分析图", "识别图"
+        ]
+        prompt_lower = prompt.lower()
+        return any(keyword in prompt_lower for keyword in image_keywords)
+    
+    def _extract_image_path(self, prompt: str) -> Optional[str]:
+        """从提示中提取图像路径"""
+        import re
+        
+        # 匹配常见的文件路径模式
+        path_patterns = [
+            r'["\']([^"\']*\.(?:png|jpg|jpeg|gif|bmp|tiff|webp))["\']',  # 带引号的路径
+            r'(\S+\.(?:png|jpg|jpeg|gif|bmp|tiff|webp))',  # 不带引号的路径
+            r'文件路径[：:]\s*([^\s]+)',  # 中文文件路径标识
+            r'image[:\s]+([^\s]+)',  # 英文图像路径标识
+        ]
+        
+        for pattern in path_patterns:
+            match = re.search(pattern, prompt, re.IGNORECASE)
+            if match:
+                path = match.group(1).strip()
+                if os.path.exists(path):
+                    return path
+        
+        return None
 
     def generate_with_tools(self, prompt: str, tools: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
         """

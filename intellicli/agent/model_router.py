@@ -6,6 +6,7 @@
 import re
 from typing import Dict, List, Any, Optional
 from ..models.base_llm import BaseLLM
+from ..models.multimodal_manager import multimodal_manager
 
 class ModelRouter:
     """智能模型路由器，根据任务特征选择最合适的模型"""
@@ -21,6 +22,9 @@ class ModelRouter:
         self.model_clients = model_clients
         self.config = config
         self.routing_rules = self._build_routing_rules()
+        
+        # 注册模型到多模态管理器
+        self._register_models_to_multimodal_manager()
     
     def _build_routing_rules(self) -> List[Dict[str, Any]]:
         """构建路由规则"""
@@ -33,7 +37,7 @@ class ModelRouter:
                     r"视觉|visual|image|photo|screenshot|识别屏幕|分析图片",
                     r"generate_vision|vision_model|多模态|multimodal"
                 ],
-                "preferred_models": ["llava_remote_vision", "gemini_1_5_pro"],
+                "preferred_models": ["llava_vision", "gemini_1_5_pro"],
                 "required_capabilities": ["vision"]
             },
             {
@@ -183,6 +187,24 @@ class ModelRouter:
                     capabilities = provider.get("capabilities", [])
                     if capabilities:
                         return capabilities
+    
+    def _register_models_to_multimodal_manager(self):
+        """将模型注册到多模态管理器"""
+        for alias, client in self.model_clients.items():
+            capabilities = self._get_model_capabilities(alias)
+            
+            if 'vision' in capabilities:
+                multimodal_manager.register_vision_model(alias, client)
+            else:
+                multimodal_manager.register_text_model(alias, client)
+    
+    def process_multimodal_task(self, task_description: str, context: Dict[str, Any] = None) -> str:
+        """处理多模态任务"""
+        return multimodal_manager.process_multimodal_input(task_description, context)
+    
+    def analyze_task_modality(self, task_description: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """分析任务的模态类型"""
+        return multimodal_manager.analyze_input(task_description, context)
         
         # 如果配置中没有指定能力，使用启发式规则
         capabilities = ["general"]

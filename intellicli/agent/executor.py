@@ -9,7 +9,15 @@ class Executor:
     它调用必要的工具并收集结果。
     """
 
-    def __init__(self, tool_modules: List[str] = ['intellicli.tools.file_system', 'intellicli.tools.shell', 'intellicli.tools.python_analyzer', 'intellicli.tools.system_operations']):
+    def __init__(self, tool_modules: List[str] = [
+        'intellicli.tools.file_system', 
+        'intellicli.tools.shell', 
+        'intellicli.tools.python_analyzer', 
+        'intellicli.tools.system_operations',
+        'intellicli.tools.code_analyzer',
+        'intellicli.tools.git_operations', 
+        'intellicli.tools.document_manager'
+    ]):
         """
         初始化执行器并动态加载可用工具。
 
