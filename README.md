@@ -20,7 +20,7 @@
 
 #### 1. 克隆仓库
 ```bash
-git clone <https://github.com/MR-MaoJiu/IntelliCLI.git>
+git clone https://github.com/MR-MaoJiu/IntelliCLI.git
 cd IntelliCLI
 ```
 
@@ -51,7 +51,7 @@ icli session
 
 ```bash
 # 克隆仓库
-git clone <https://github.com/MR-MaoJiu/IntelliCLI.git>
+git clone https://github.com/MR-MaoJiu/IntelliCLI.git
 cd IntelliCLI
 
 # 开发模式安装
@@ -65,7 +65,7 @@ intellicli session
 
 ```bash
 # 克隆仓库
-git clone <https://github.com/MR-MaoJiu/IntelliCLI.git>
+git clone https://github.com/MR-MaoJiu/IntelliCLI.git
 cd IntelliCLI
 
 # 安装依赖
