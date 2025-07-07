@@ -8,6 +8,14 @@ from typing import List, Dict, Any
 from dataclasses import dataclass
 import time
 
+# 导入 prompt_toolkit 相关模块
+from prompt_toolkit import prompt
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.styles import Style
+from prompt_toolkit.shortcuts import print_formatted_text
+from prompt_toolkit.formatted_text import FormattedText
+
 # ANSI颜色代码
 class Colors:
     # 基础颜色
@@ -52,6 +60,8 @@ class UIConfig:
     show_timestamps: bool = False
     compact_mode: bool = False
     animation_speed: float = 0.05
+    enable_history: bool = True
+    enable_completion: bool = True
 
 class ModernUI:
     """现代化的CLI用户界面"""
@@ -59,6 +69,25 @@ class ModernUI:
     def __init__(self, config: UIConfig = None):
         self.config = config or UIConfig()
         self._current_section = None
+        
+        # 初始化输入历史记录
+        self.input_history = InMemoryHistory()
+        
+        # 初始化自动补全
+        self.completer = WordCompleter([
+            'help', 'exit', 'clear', 'models',
+            '创建', '列出', '运行', '分析', '删除', '修改',
+            '文件', '目录', '代码', '脚本', '网页', '图片'
+        ])
+        
+        # 定义 prompt_toolkit 的样式
+        self.prompt_style = Style.from_dict({
+            'prompt': 'ansibrightcyan bold',
+            'input': 'ansiwhite',
+            'warning': 'ansibrightyellow',
+            'error': 'ansibrightred',
+            'success': 'ansibrightgreen',
+        })
         
     def _colorize(self, text: str, color: str) -> str:
         """给文本添加颜色"""
@@ -252,19 +281,48 @@ class ModernUI:
         """显示成功信息"""
         self._print(f"✅ {success_message}", Colors.BRIGHT_GREEN)
     
-    def get_user_input(self, prompt: str = "IntelliCLI") -> str:
-        """获取用户输入"""
-        prompt_text = f"{self._colorize(prompt, Colors.BRIGHT_CYAN)}: "
+    def get_user_input(self, prompt_text: str = "IntelliCLI") -> str:
+        """获取用户输入 - 支持方向键和正确的中文处理"""
         try:
-            return input(prompt_text).strip()
+            # 创建格式化的提示符
+            formatted_prompt = FormattedText([
+                ('class:prompt', f"{prompt_text}: "),
+            ])
+            
+            # 使用 prompt_toolkit 获取输入
+            user_input = prompt(
+                formatted_prompt,
+                style=self.prompt_style,
+                history=self.input_history if self.config.enable_history else None,
+                completer=self.completer if self.config.enable_completion else None,
+                complete_while_typing=True,
+                vi_mode=False,  # 使用 Emacs 模式，支持常见的快捷键
+                multiline=False,
+                wrap_lines=True,
+                mouse_support=True,
+                enable_history_search=True,
+            )
+            
+            return user_input.strip()
+            
         except KeyboardInterrupt:
-            self._print("\n")
-            self._print("👋 用户取消操作", Colors.BRIGHT_YELLOW)
+            print_formatted_text(FormattedText([
+                ('class:warning', '\n👋 用户取消操作')
+            ]))
             return ""
         except EOFError:
-            self._print("\n")
-            self._print("👋 会话结束", Colors.BRIGHT_YELLOW)
+            print_formatted_text(FormattedText([
+                ('class:warning', '\n👋 会话结束')
+            ]))
             return "exit"
+        except Exception as e:
+            # 如果 prompt_toolkit 出现问题，回退到基本的 input()
+            print(f"⚠️  输入系统错误，回退到基本模式: {e}")
+            try:
+                prompt_basic = f"{self._colorize(prompt_text, Colors.BRIGHT_CYAN)}: "
+                return input(prompt_basic).strip()
+            except (KeyboardInterrupt, EOFError):
+                return "exit"
     
     def print_help(self):
         """显示帮助信息"""
@@ -277,6 +335,17 @@ class ModernUI:
             f"   • {Colors.BRIGHT_YELLOW}exit{Colors.RESET} - 退出 IntelliCLI",
             f"   • {Colors.BRIGHT_YELLOW}clear{Colors.RESET} - 清空会话记忆",
             f"   • {Colors.BRIGHT_YELLOW}models{Colors.RESET} - 显示可用模型信息",
+            "",
+            "⌨️  高级输入功能:",
+            f"   • {Colors.BRIGHT_GREEN}方向键{Colors.RESET} - 左右移动光标，上下浏览历史",
+            f"   • {Colors.BRIGHT_GREEN}Tab{Colors.RESET} - 自动补全常用词汇",
+            f"   • {Colors.BRIGHT_GREEN}Ctrl+A{Colors.RESET} - 移到行首",
+            f"   • {Colors.BRIGHT_GREEN}Ctrl+E{Colors.RESET} - 移到行末",
+            f"   • {Colors.BRIGHT_GREEN}Ctrl+K{Colors.RESET} - 删除光标到行末",
+            f"   • {Colors.BRIGHT_GREEN}Ctrl+U{Colors.RESET} - 删除光标到行首",
+            f"   • {Colors.BRIGHT_GREEN}Ctrl+W{Colors.RESET} - 删除前一个单词",
+            f"   • {Colors.BRIGHT_GREEN}Ctrl+R{Colors.RESET} - 搜索历史记录",
+            f"   • {Colors.DIM}支持正确的中文字符编辑{Colors.RESET}",
             "",
             "🧠 智能模型路由:",
             "   • 系统会根据任务类型自动选择最合适的模型",
