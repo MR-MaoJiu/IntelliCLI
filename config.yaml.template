@@ -1,0 +1,93 @@
+# IntelliCLI 配置文件模板
+# 
+# 这是一个配置文件模板，展示了如何配置不同的模型供应商
+# 首次运行时，系统会自动启动配置向导生成个性化配置
+# 您也可以手动编辑此文件来自定义配置
+
+# 模型配置
+models:
+  # 主模型别名（用于默认任务）
+  primary: gemma3_local
+  
+  # 可用模型列表
+  providers:
+    # Ollama 本地模型示例
+    - alias: gemma3_local
+      provider: ollama
+      model_name: "gemma3:27b"
+      base_url: "http://localhost:11434"
+      capabilities: ["general", "code", "reasoning"]
+    
+    # Ollama 远程模型示例
+    - alias: gemma3_remote
+      provider: ollama
+      model_name: "gemma3:27b"
+      base_url: "http://your-remote-server:11434"
+      capabilities: ["general", "code", "reasoning"]
+    
+    # Ollama 视觉模型示例
+    - alias: llava_vision
+      provider: ollama
+      model_name: "llava:34b"
+      base_url: "http://localhost:11434"
+      capabilities: ["vision", "general"]
+    
+    # Google Gemini 模型示例
+    - alias: gemini_pro
+      provider: gemini
+      model_name: "gemini-1.5-pro-latest"
+      capabilities: ["general", "code", "reasoning", "vision"]
+      # API 密钥建议通过环境变量 GEMINI_API_KEY 设置
+    
+    # OpenAI 模型示例
+    - alias: gpt4
+      provider: openai
+      model_name: "gpt-4"
+      capabilities: ["general", "code", "reasoning"]
+      # API 密钥建议通过环境变量 OPENAI_API_KEY 设置
+    
+    - alias: gpt4_vision
+      provider: openai
+      model_name: "gpt-4-vision-preview"
+      capabilities: ["vision", "general"]
+
+# 工具配置
+tools:
+  # 文件系统操作工具
+  file_system:
+    enabled: true
+  
+  # Shell 命令执行工具
+  shell:
+    enabled: true
+  
+  # 系统操作工具（如打开文件、启动服务器等）
+  system_operations:
+    enabled: true
+  
+  # Python 代码分析工具
+  python_analyzer:
+    enabled: true
+
+# 日志配置
+logging:
+  level: INFO  # 选项: DEBUG, INFO, WARNING, ERROR
+
+# 能力说明:
+# - general: 通用对话和文本处理
+# - code: 代码生成和编程任务
+# - reasoning: 复杂推理和分析任务
+# - vision: 图像和视觉相关任务
+#
+# 供应商说明:
+# - ollama: 本地或远程 Ollama 服务
+#   - 需要配置 base_url 和 model_name
+#   - 支持的模型：gemma3, llava, llama3, mistral 等
+# 
+# - gemini: Google Gemini API
+#   - 需要设置环境变量 GEMINI_API_KEY
+#   - 支持的模型：gemini-1.5-pro-latest, gemini-1.5-flash 等
+# 
+# - openai: OpenAI API
+#   - 需要设置环境变量 OPENAI_API_KEY
+#   - 支持的模型：gpt-4, gpt-3.5-turbo, gpt-4-vision-preview 等 

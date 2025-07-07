@@ -1,0 +1,4 @@
+typer
+pyyaml
+requests
+google-generativeai
