@@ -1,4 +1,7 @@
 import json
+import platform
+import os
+from datetime import datetime
 from typing import List, Dict, Any
 
 class Planner:
@@ -20,6 +23,9 @@ class Planner:
         生成实现目标的逐步计划。如果模型未返回有效的 JSON 计划，它将重试最多
         `max_retries` 次。
         """
+        # 获取当前系统信息
+        system_info = self._get_system_info()
+        
         # 构建详细的工具说明
         tool_descriptions = []
         for tool in tools:
@@ -41,8 +47,15 @@ class Planner:
                 tool_descriptions.append(f"- {tool_name}: {tool_desc}")
         
         prompt = f"""
-您是一位智能的任务规划代理。您的任务是将一个高级目标分解为一系列精确、可执行的步骤。
-您必须只用有效的 JSON 任务数组进行响应。不要包含任何其他文本、解释或 Markdown 格式。
+您是一位运行在 {system_info['os_name']} 系统上的智能任务规划代理。您的任务是将一个高级目标分解为一系列精确、可执行的步骤。
+
+**当前系统环境:**
+- 操作系统: {system_info['os_name']} ({system_info['os_version']})
+- 系统架构: {system_info['architecture']}
+- 当前时间: {system_info['current_time']}
+- 工作目录: {system_info['current_directory']}
+- Python 版本: {system_info['python_version']}
+- Shell 环境: {system_info['shell']}
 
 **目标:**
 {goal}
@@ -54,8 +67,10 @@ class Planner:
 1. 仔细分析目标，选择最合适的工具
 2. 使用正确的参数名称（如上所示）
 3. 确保参数类型正确
-4. 创建逻辑清晰的步骤序列
-5. 如果步骤需要前一步的输出，使用 "<PREVIOUS_STEP_OUTPUT>" 作为占位符
+4. 根据当前系统环境调整命令和路径
+5. 创建逻辑清晰的步骤序列
+6. 如果步骤需要前一步的输出，使用 "<PREVIOUS_STEP_OUTPUT>" 作为占位符
+7. 考虑当前操作系统的特殊性（如路径分隔符、命令语法等）
 
 **JSON 格式要求:**
 - 每个步骤包含: "step" (整数), "tool" (工具名), "arguments" (参数字典)
@@ -115,6 +130,59 @@ class Planner:
 
         print("错误: 模型在多次尝试后未能生成有效的计划。")
         return []
+
+    def _get_system_info(self) -> Dict[str, str]:
+        """
+        获取当前系统环境信息。
+        """
+        try:
+            # 获取操作系统信息
+            os_name = platform.system()
+            if os_name == "Darwin":
+                os_name = "macOS"
+            elif os_name == "Windows":
+                os_name = "Windows"
+            elif os_name == "Linux":
+                os_name = "Linux"
+            
+            # 获取详细版本信息
+            os_version = platform.platform()
+            
+            # 获取系统架构
+            architecture = platform.machine()
+            
+            # 获取当前时间
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 获取当前工作目录
+            current_directory = os.getcwd()
+            
+            # 获取Python版本
+            python_version = platform.python_version()
+            
+            # 获取Shell环境
+            shell = os.environ.get('SHELL', 'unknown')
+            
+            return {
+                'os_name': os_name,
+                'os_version': os_version,
+                'architecture': architecture,
+                'current_time': current_time,
+                'current_directory': current_directory,
+                'python_version': python_version,
+                'shell': shell
+            }
+        except Exception as e:
+            print(f"获取系统信息时出错: {e}")
+            return {
+                'os_name': 'unknown',
+                'os_version': 'unknown',
+                'architecture': 'unknown',
+                'current_time': 'unknown',
+                'current_directory': 'unknown',
+                'python_version': 'unknown',
+                'shell': 'unknown'
+            }
 
     def _validate_plan(self, plan: List[Dict[str, Any]], tools: List[Dict[str, Any]]) -> bool:
         """
