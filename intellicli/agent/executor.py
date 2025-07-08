@@ -9,7 +9,7 @@ class Executor:
     它调用必要的工具并收集结果。
     """
 
-    def __init__(self, tool_modules: List[str] = [
+    def __init__(self, model_client=None, tool_modules: List[str] = [
         'intellicli.tools.file_system', 
         'intellicli.tools.shell', 
         'intellicli.tools.python_analyzer', 
@@ -18,17 +18,24 @@ class Executor:
         'intellicli.tools.git_operations', 
         'intellicli.tools.document_manager',
         'intellicli.tools.image_processor',
-        'intellicli.tools.web_search'
+        'intellicli.tools.web_search',
+        'intellicli.tools.content_integrator'
     ]):
         """
         初始化执行器并动态加载可用工具。
 
         Args:
+            model_client: 模型客户端实例，用于内容整合工具
             tool_modules (List[str]): 定义工具函数的模块列表。
         """
+        self.model_client = model_client
         self.tools = {}
         self.tool_info = {}  # 存储工具的详细信息
         self._load_tools(tool_modules)
+        
+        # 如果提供了模型客户端，设置给内容整合工具
+        if model_client:
+            self._setup_content_integrator(model_client)
 
     def _load_tools(self, tool_modules: List[str]) -> None:
         """
@@ -72,6 +79,14 @@ class Executor:
                             }
             except ImportError as e:
                 print(f"警告: 无法导入模块 {module_name}。{e}")
+
+    def _setup_content_integrator(self, model_client):
+        """设置内容整合工具的模型客户端"""
+        try:
+            from ..tools.content_integrator import set_model_client
+            set_model_client(model_client)
+        except ImportError as e:
+            print(f"警告: 无法导入内容整合工具: {e}")
 
     def get_tool_info(self) -> List[Dict[str, Any]]:
         """

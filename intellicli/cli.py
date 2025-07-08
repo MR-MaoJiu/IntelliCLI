@@ -717,7 +717,7 @@ def callback(ctx: typer.Context):
     primary_client = model_clients.get(primary_model)
     
     planner = Planner(primary_client)
-    executor = Executor()
+    executor = Executor(model_client=primary_client)  # 传递主模型客户端给executor
     agent = Agent(model_router, planner, executor)
     
     ctx.obj = {
