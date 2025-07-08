@@ -11,6 +11,9 @@ from .agent.model_router import ModelRouter
 from .config.model_config import ModelConfigManager
 from .models.ollama_client import OllamaClient
 from .models.gemini_client import GeminiClient
+from .models.deepseek_client import DeepSeekClient
+from .models.openai_client import OpenAIClient
+from .models.claude_client import ClaudeClient
 from .ui.display import ui  # 导入现代化UI
 
 app = typer.Typer()
@@ -56,7 +59,27 @@ def get_model_clients(config: dict) -> Dict[str, Any]:
                     base_url=model_info.get('base_url', 'http://localhost:11434')
                 )
             elif model_info['provider'] == 'gemini':
-                client = GeminiClient(model_name=model_info['model_name'])
+                client = GeminiClient(
+                    model_name=model_info['model_name'],
+                    api_key=model_info.get('api_key')
+                )
+            elif model_info['provider'] == 'openai':
+                client = OpenAIClient(
+                    model_name=model_info['model_name'],
+                    api_key=model_info.get('api_key'),
+                    base_url=model_info.get('base_url')
+                )
+            elif model_info['provider'] == 'deepseek':
+                client = DeepSeekClient(
+                    model_name=model_info['model_name'],
+                    api_key=model_info.get('api_key'),
+                    base_url=model_info.get('base_url', 'https://api.deepseek.com')
+                )
+            elif model_info['provider'] == 'claude':
+                client = ClaudeClient(
+                    model_name=model_info['model_name'],
+                    api_key=model_info.get('api_key')
+                )
             else:
                 ui.print_warning(f"不支持的模型提供商: {model_info['provider']}")
                 continue
@@ -84,8 +107,27 @@ def get_model_client(config: dict):
             base_url=model_info.get('base_url')  # 如果存在，则传递 base_url
         )
     elif model_info['provider'] == 'gemini':
-        # 假设 GEMINI_API_KEY 已在环境变量中设置
-        return GeminiClient(model_name=model_info['model_name'])
+        return GeminiClient(
+            model_name=model_info['model_name'],
+            api_key=model_info.get('api_key')
+        )
+    elif model_info['provider'] == 'openai':
+        return OpenAIClient(
+            model_name=model_info['model_name'],
+            api_key=model_info.get('api_key'),
+            base_url=model_info.get('base_url')
+        )
+    elif model_info['provider'] == 'deepseek':
+        return DeepSeekClient(
+            model_name=model_info['model_name'],
+            api_key=model_info.get('api_key'),
+            base_url=model_info.get('base_url', 'https://api.deepseek.com')
+        )
+    elif model_info['provider'] == 'claude':
+        return ClaudeClient(
+            model_name=model_info['model_name'],
+            api_key=model_info.get('api_key')
+        )
     else:
         raise ValueError(f"不支持的模型提供商: {model_info['provider']}")
 

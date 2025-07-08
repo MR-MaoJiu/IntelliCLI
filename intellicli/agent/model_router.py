@@ -27,7 +27,7 @@ class ModelRouter:
         self._register_models_to_multimodal_manager()
     
     def _build_routing_rules(self) -> List[Dict[str, Any]]:
-        """构建路由规则"""
+        """动态构建路由规则，基于实际可用的模型"""
         return [
             {
                 "name": "vision_tasks",
@@ -37,7 +37,6 @@ class ModelRouter:
                     r"视觉|visual|image|photo|screenshot|识别屏幕|分析图片",
                     r"generate_vision|vision_model|多模态|multimodal"
                 ],
-                "preferred_models": ["llava_vision", "gemini_1_5_pro"],
                 "required_capabilities": ["vision"]
             },
             {
@@ -48,7 +47,6 @@ class ModelRouter:
                     r"python|javascript|html|css|java|cpp|代码分析",
                     r"写.*程序|创建.*脚本|生成.*代码|程序设计"
                 ],
-                "preferred_models": ["gemini_1_5_pro", "gemma3_remote"],
                 "required_capabilities": ["code"]
             },
             {
@@ -58,7 +56,6 @@ class ModelRouter:
                     r"分析|推理|解决.*问题|复杂.*任务|策略|规划",
                     r"比较|评估|建议|方案|解决方案|深入分析"
                 ],
-                "preferred_models": ["gemini_1_5_pro", "gemma3_remote"],
                 "required_capabilities": ["reasoning"]
             },
             {
@@ -67,7 +64,6 @@ class ModelRouter:
                 "patterns": [
                     r".*"  # 匹配所有内容，作为默认规则
                 ],
-                "preferred_models": ["gemma3_remote", "gemini_1_5_pro"],
                 "required_capabilities": ["general"]
             }
         ]
@@ -102,10 +98,9 @@ class ModelRouter:
         for rule in self.routing_rules:
             for pattern in rule["patterns"]:
                 if re.search(pattern, task_description, re.IGNORECASE):
-                    # 找到匹配的规则，选择可用的首选模型
-                    for model_alias in rule["preferred_models"]:
-                        if model_alias in self.model_clients:
-                            return model_alias
+                    # 找到匹配的规则，根据所需能力选择最合适的模型
+                    required_capabilities = rule["required_capabilities"]
+                    return self._select_model_by_capability(required_capabilities)
         
         # 如果没有匹配的规则，返回默认的主模型
         primary_model = self.config.get("models", {}).get("primary")
@@ -116,30 +111,94 @@ class ModelRouter:
         return list(self.model_clients.keys())[0] if self.model_clients else None
     
     def _select_model_by_capability(self, required_capabilities: List[str]) -> str:
-        """根据所需能力选择模型"""
-        # 首先尝试从配置文件中找到具有所需能力的模型
+        """根据所需能力选择最合适的模型"""
+        # 获取所有具有所需能力的模型
+        suitable_models = []
+        
         for model_alias in self.model_clients:
             model_capabilities = self._get_model_capabilities(model_alias)
             if any(capability in model_capabilities for capability in required_capabilities):
-                return model_alias
+                suitable_models.append({
+                    'alias': model_alias,
+                    'capabilities': model_capabilities,
+                    'priority': self._calculate_model_priority(model_alias, required_capabilities)
+                })
         
-        # 如果配置中没有找到，使用启发式规则
-        capability_map = {
-            "vision": ["llava", "gemini"],
-            "code": ["gemini", "gemma", "llama"],
-            "reasoning": ["gemini", "gemma"],
-            "general": ["gemma", "llama", "gemini"]
+        if suitable_models:
+            # 按优先级排序，选择最合适的模型
+            suitable_models.sort(key=lambda x: x['priority'], reverse=True)
+            return suitable_models[0]['alias']
+        
+        # 如果没有找到具有确切能力的模型，使用启发式规则
+        fallback_model = self._select_fallback_model(required_capabilities)
+        if fallback_model:
+            return fallback_model
+        
+        # 最后的后备选择：返回主模型或第一个可用模型
+        primary_model = self.config.get("models", {}).get("primary")
+        if primary_model and primary_model in self.model_clients:
+            return primary_model
+        
+        return list(self.model_clients.keys())[0] if self.model_clients else None
+    
+    def _calculate_model_priority(self, model_alias: str, required_capabilities: List[str]) -> int:
+        """计算模型对于特定能力需求的优先级"""
+        priority = 0
+        alias_lower = model_alias.lower()
+        
+        # 基于模型类型的基础优先级
+        model_type_priorities = {
+            'claude': 90,     # Claude 通常在推理和文本质量方面表现优秀
+            'openai': 85,     # OpenAI 模型通常表现均衡
+            'gpt': 85,        # GPT 系列模型
+            'gemini': 80,     # Google Gemini 模型
+            'deepseek': 75,   # DeepSeek 在代码方面表现出色
+            'gemma': 70,      # Gemma 模型
+            'llava': 65,      # LLaVA 主要用于视觉任务
+            'llama': 60,      # LLaMA 基础模型
+        }
+        
+        for model_type, base_priority in model_type_priorities.items():
+            if model_type in alias_lower:
+                priority += base_priority
+                break
+        
+        # 根据特定能力需求调整优先级
+        for capability in required_capabilities:
+            if capability == "vision":
+                if any(keyword in alias_lower for keyword in ['llava', 'vision', 'claude', 'gpt-4']):
+                    priority += 20
+            elif capability == "code":
+                if any(keyword in alias_lower for keyword in ['deepseek', 'code', 'coder', 'claude', 'gpt-4']):
+                    priority += 15
+            elif capability == "reasoning":
+                if any(keyword in alias_lower for keyword in ['claude', 'gpt-4', 'gemini', 'reasoning']):
+                    priority += 15
+        
+        # 检查是否是主模型（给予额外优先级）
+        primary_model = self.config.get("models", {}).get("primary")
+        if model_alias == primary_model:
+            priority += 10
+        
+        return priority
+    
+    def _select_fallback_model(self, required_capabilities: List[str]) -> Optional[str]:
+        """当没有找到具有确切能力的模型时，使用启发式规则选择后备模型"""
+        capability_keywords = {
+            "vision": ["llava", "vision", "claude", "openai", "gpt", "gemini"],
+            "code": ["deepseek", "code", "coder", "claude", "openai", "gpt", "gemini", "gemma"],
+            "reasoning": ["claude", "openai", "gpt", "gemini", "deepseek", "gemma"],
+            "general": ["claude", "openai", "gpt", "gemini", "deepseek", "gemma", "llama"]
         }
         
         for capability in required_capabilities:
-            if capability in capability_map:
-                for model_pattern in capability_map[capability]:
+            if capability in capability_keywords:
+                for keyword in capability_keywords[capability]:
                     for model_alias in self.model_clients:
-                        if model_pattern in model_alias.lower():
+                        if keyword in model_alias.lower():
                             return model_alias
         
-        # 如果没有找到合适的模型，返回默认模型
-        return self.route_task("general task")
+        return None
     
     def get_model_client(self, model_alias: str) -> Optional[BaseLLM]:
         """获取指定模型的客户端"""
@@ -216,5 +275,11 @@ class ModelRouter:
             capabilities.extend(["code", "reasoning", "vision"])
         if "gemma" in alias_lower or "llama" in alias_lower:
             capabilities.extend(["code", "reasoning"])
+        if "deepseek" in alias_lower:
+            capabilities.extend(["code", "reasoning"])
+        if "claude" in alias_lower:
+            capabilities.extend(["code", "reasoning", "vision"])
+        if "openai" in alias_lower or "gpt" in alias_lower:
+            capabilities.extend(["code", "reasoning", "vision"])
         
         return capabilities 

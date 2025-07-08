@@ -4,3 +4,5 @@ requests
 google-generativeai
 prompt_toolkit
 Pillow
+openai
+anthropic

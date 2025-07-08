@@ -33,11 +33,28 @@ class ModelConfigManager:
             },
             "openai": {
                 "name": "OpenAI",
-                "description": "OpenAI API 服务",
+                "description": "OpenAI API 服务 (ChatGPT)",
+                "required_fields": ["model_name"],
+                "optional_fields": ["api_key", "base_url"],
+                "env_var": "OPENAI_API_KEY",
+                "supported_capabilities": ["general", "code", "reasoning", "vision"]
+            },
+            "deepseek": {
+                "name": "DeepSeek",
+                "description": "DeepSeek API 服务",
+                "required_fields": ["model_name"],
+                "optional_fields": ["api_key", "base_url"],
+                "env_var": "DEEPSEEK_API_KEY",
+                "default_base_url": "https://api.deepseek.com",
+                "supported_capabilities": ["general", "code", "reasoning"]
+            },
+            "claude": {
+                "name": "Anthropic Claude",
+                "description": "Anthropic Claude API 服务",
                 "required_fields": ["model_name"],
                 "optional_fields": ["api_key"],
-                "env_var": "OPENAI_API_KEY",
-                "supported_capabilities": ["general", "code", "reasoning"]
+                "env_var": "ANTHROPIC_API_KEY",
+                "supported_capabilities": ["general", "code", "reasoning", "vision"]
             }
         }
         
@@ -183,6 +200,27 @@ class ModelConfigManager:
         
         elif provider == "openai":
             api_key = ui.get_user_input("OpenAI API Key (可留空，将使用环境变量 OPENAI_API_KEY)")
+            if api_key:
+                model_config["api_key"] = api_key
+            
+            # 可选的自定义API端点
+            base_url = ui.get_user_input("自定义API端点 (可留空，使用默认OpenAI端点)")
+            if base_url:
+                model_config["base_url"] = base_url
+        
+        elif provider == "deepseek":
+            api_key = ui.get_user_input("DeepSeek API Key (可留空，将使用环境变量 DEEPSEEK_API_KEY)")
+            if api_key:
+                model_config["api_key"] = api_key
+            
+            # 可选的自定义API端点
+            default_url = provider_info.get("default_base_url", "https://api.deepseek.com")
+            base_url = ui.get_user_input(f"DeepSeek API端点 (默认: {default_url})")
+            if base_url:
+                model_config["base_url"] = base_url
+        
+        elif provider == "claude":
+            api_key = ui.get_user_input("Claude API Key (可留空，将使用环境变量 ANTHROPIC_API_KEY)")
             if api_key:
                 model_config["api_key"] = api_key
         
