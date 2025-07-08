@@ -4,5 +4,6 @@
 """
 
 from .model_config import ModelConfigManager
+from .search_config import SearchConfigManager
 
-__all__ = ['ModelConfigManager'] 
+__all__ = ["ModelConfigManager", "SearchConfigManager"] 

@@ -15,6 +15,7 @@ from . import code_analyzer
 from . import git_operations
 from . import document_manager
 from . import image_processor
+from . import web_search
 
 __all__ = [
     'file_system',
@@ -24,5 +25,6 @@ __all__ = [
     'code_analyzer',
     'git_operations',
     'document_manager',
-    'image_processor'
+    'image_processor',
+    'web_search'
 ]

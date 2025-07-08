@@ -17,7 +17,8 @@ class Executor:
         'intellicli.tools.code_analyzer',
         'intellicli.tools.git_operations', 
         'intellicli.tools.document_manager',
-        'intellicli.tools.image_processor'
+        'intellicli.tools.image_processor',
+        'intellicli.tools.web_search'
     ]):
         """
         初始化执行器并动态加载可用工具。

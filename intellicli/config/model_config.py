@@ -64,6 +64,39 @@ class ModelConfigManager:
             "reasoning": "复杂推理和分析任务",
             "vision": "图像和视觉相关任务"
         }
+        
+        # 搜索引擎配置信息
+        self.search_engines_info = {
+            "google": {
+                "name": "Google Custom Search",
+                "description": "Google自定义搜索API",
+                "required_fields": ["api_key", "search_engine_id"],
+                "config_keys": ["google_search_api_key", "google_search_engine_id"],
+                "enabled": False
+            },
+            "bing": {
+                "name": "Bing Search API",
+                "description": "微软Bing搜索API",
+                "required_fields": ["api_key"],
+                "config_keys": ["bing_search_api_key"],
+                "enabled": False
+            },
+            "duckduckgo": {
+                "name": "DuckDuckGo",
+                "description": "DuckDuckGo免费搜索（无需配置）",
+                "required_fields": [],
+                "config_keys": [],
+                "enabled": True,
+                "default": True
+            },
+            "searx": {
+                "name": "SearX",
+                "description": "SearX开源搜索引擎（使用公开实例）",
+                "required_fields": [],
+                "config_keys": [],
+                "enabled": True
+            }
+        }
     
     def has_valid_config(self) -> bool:
         """检查是否有有效的模型配置"""
@@ -129,8 +162,11 @@ class ModelConfigManager:
         # 选择主模型
         primary_model = self._select_primary_model(models)
         
+        # 配置搜索引擎（可选）
+        search_config = self._configure_search_engines()
+        
         # 生成完整配置
-        config = self._generate_config(models, primary_model)
+        config = self._generate_config(models, primary_model, search_config)
         
         # 保存配置
         return self._save_config(config)
@@ -283,9 +319,76 @@ class ModelConfigManager:
             except ValueError:
                 ui.print_error("请输入有效的数字")
     
-    def _generate_config(self, models: List[Dict[str, Any]], primary_model: str) -> Dict[str, Any]:
+    def _configure_search_engines(self) -> Dict[str, Any]:
+        """配置搜索引擎"""
+        ui.print_section_header("搜索引擎配置 (可选)", "🔍")
+        ui.print_info("配置搜索引擎以启用网络搜索功能")
+        ui.print_info("如果跳过此步骤，将使用DuckDuckGo作为默认搜索引擎")
+        ui.print_info("")
+        
+        configure_search = ui.get_user_input("是否配置搜索引擎？(y/N)").lower()
+        if configure_search not in ['y', 'yes', '是']:
+            return {"engines": {}}
+        
+        search_config = {"engines": {}}
+        
+        # 显示可配置的搜索引擎
+        ui.print_info("📋 可配置的搜索引擎:")
+        configurable_engines = {k: v for k, v in self.search_engines_info.items() 
+                               if v.get("required_fields")}
+        
+        for key, info in configurable_engines.items():
+            ui.print_info(f"   • {info['name']} - {info['description']}")
+        
+        ui.print_info("")
+        
+        for engine_key, engine_info in configurable_engines.items():
+            ui.print_info(f"🔧 配置 {engine_info['name']}")
+            configure_engine = ui.get_user_input(f"是否配置 {engine_info['name']}？(y/N)").lower()
+            
+            if configure_engine in ['y', 'yes', '是']:
+                engine_config = {}
+                
+                if engine_key == "google":
+                    api_key = ui.get_user_input("Google Search API Key:")
+                    search_engine_id = ui.get_user_input("Google Custom Search Engine ID:")
+                    
+                    if api_key and search_engine_id:
+                        engine_config = {
+                            "api_key": api_key,
+                            "search_engine_id": search_engine_id,
+                            "enabled": True
+                        }
+                        ui.print_success(f"✅ 已配置 {engine_info['name']}")
+                    else:
+                        ui.print_warning("⚠️ API Key 和 Search Engine ID 都不能为空，跳过配置")
+                
+                elif engine_key == "bing":
+                    api_key = ui.get_user_input("Bing Search API Key:")
+                    
+                    if api_key:
+                        engine_config = {
+                            "api_key": api_key,
+                            "enabled": True
+                        }
+                        ui.print_success(f"✅ 已配置 {engine_info['name']}")
+                    else:
+                        ui.print_warning("⚠️ API Key 不能为空，跳过配置")
+                
+                if engine_config:
+                    search_config["engines"][engine_key] = engine_config
+            
+            ui.print_info("")
+        
+        # 总是启用免费搜索引擎
+        search_config["engines"]["duckduckgo"] = {"enabled": True, "default": True}
+        search_config["engines"]["searx"] = {"enabled": True}
+        
+        return search_config
+    
+    def _generate_config(self, models: List[Dict[str, Any]], primary_model: str, search_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """生成完整配置"""
-        return {
+        config = {
             "models": {
                 "primary": primary_model,
                 "providers": models
@@ -294,12 +397,27 @@ class ModelConfigManager:
                 "file_system": {"enabled": True},
                 "shell": {"enabled": True},
                 "system_operations": {"enabled": True},
-                "python_analyzer": {"enabled": True}
+                "python_analyzer": {"enabled": True},
+                "web_search": {"enabled": True}
             },
             "logging": {
                 "level": "INFO"
             }
         }
+        
+        # 添加搜索引擎配置
+        if search_config and search_config.get("engines"):
+            config["search_engines"] = search_config
+        else:
+            # 默认搜索引擎配置
+            config["search_engines"] = {
+                "engines": {
+                    "duckduckgo": {"enabled": True, "default": True},
+                    "searx": {"enabled": True}
+                }
+            }
+        
+        return config
     
     def _save_config(self, config: Dict[str, Any]) -> bool:
         """保存配置到文件"""

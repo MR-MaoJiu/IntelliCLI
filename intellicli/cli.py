@@ -9,6 +9,7 @@ from .agent.planner import Planner
 from .agent.executor import Executor
 from .agent.model_router import ModelRouter
 from .config.model_config import ModelConfigManager
+from .config.search_config import SearchConfigManager
 from .models.ollama_client import OllamaClient
 from .models.gemini_client import GeminiClient
 from .models.deepseek_client import DeepSeekClient
@@ -548,6 +549,151 @@ def config_reset():
     except Exception as e:
         ui.print_error(f"重置配置时出错: {e}")
         raise typer.Exit(code=1)
+
+@app.command(name="search-config")
+def search_config():
+    """配置搜索引擎"""
+    try:
+        search_config_manager = SearchConfigManager()
+        search_config_manager.run_config_wizard()
+    except Exception as e:
+        ui.print_error(f"配置搜索引擎时出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command(name="search-status")
+def search_status():
+    """显示搜索引擎配置状态"""
+    try:
+        search_config_manager = SearchConfigManager()
+        search_config_manager.show_search_config()
+    except Exception as e:
+        ui.print_error(f"显示搜索配置时出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command()
+def search_test(
+    query: str = typer.Option("Python 编程", help="测试搜索查询"),
+    engine: str = typer.Option("auto", help="指定搜索引擎 (auto, google, bing, yahoo, duckduckgo, startpage, searx)"),
+    test_failover: bool = typer.Option(False, help="测试故障转移功能")
+):
+    """测试搜索引擎功能，包括智能切换"""
+    from .tools.web_search import web_search, get_available_engines, search_health
+    
+    print("🔍 搜索引擎功能测试")
+    print("=" * 50)
+    print(f"查询: {query}")
+    print(f"引擎: {engine}")
+    print(f"测试故障转移: {'是' if test_failover else '否'}")
+    
+    if test_failover:
+        print("\n🧪 故障转移测试模式")
+        print("将模拟部分引擎失败，测试自动切换功能...")
+        
+        # 临时标记一些引擎为失败状态进行测试
+        available_engines = get_available_engines()
+        if len(available_engines) > 1:
+            # 模拟第一个引擎失败
+            test_engine = available_engines[0]
+            print(f"🔧 模拟 {test_engine} 引擎失败...")
+            search_health.record_failure(test_engine)
+            search_health.record_failure(test_engine)
+            search_health.record_failure(test_engine)  # 触发黑名单
+    
+    try:
+        print(f"\n🚀 开始搜索...")
+        result = web_search(query, engine, max_results=3)
+        
+        if "error" in result:
+            print(f"❌ 搜索失败: {result['error']}")
+            if "search_info" in result:
+                search_info = result["search_info"]
+                print(f"尝试的引擎: {search_info.get('engines_tried', [])}")
+                print(f"总尝试次数: {search_info.get('total_attempts', 0)}")
+        else:
+            print(f"✅ 搜索成功!")
+            
+            # 显示搜索信息
+            if "search_info" in result:
+                search_info = result["search_info"]
+                print(f"使用的引擎: {search_info['engine_used']}")
+                print(f"尝试次数: {search_info['attempt_number']}/{search_info['total_attempts']}")
+                if search_info.get('auto_switched'):
+                    print("🔄 发生了自动切换")
+            
+            # 显示搜索结果
+            print(f"\n📋 搜索结果 (共 {result.get('total_results', 0)} 条):")
+            for i, item in enumerate(result.get("results", []), 1):
+                print(f"\n{i}. {item.get('title', 'N/A')}")
+                print(f"   链接: {item.get('url', 'N/A')}")
+                snippet = item.get('snippet', 'N/A')
+                if len(snippet) > 100:
+                    snippet = snippet[:100] + "..."
+                print(f"   摘要: {snippet}")
+        
+        # 显示当前健康状态
+        print(f"\n📊 当前引擎健康状态:")
+        available_engines = get_available_engines()
+        print(f"可用引擎: {', '.join(available_engines) if available_engines else '无'}")
+        
+        # 显示失败统计
+        if search_health.failure_counts:
+            print("失败统计:")
+            for engine, count in search_health.failure_counts.items():
+                if count > 0:
+                    print(f"  - {engine}: {count} 次")
+        
+    except Exception as e:
+        print(f"❌ 测试过程中出错: {e}")
+        import traceback
+        traceback.print_exc()
+
+@app.command()
+def search_health():
+    """显示搜索引擎健康状态报告"""
+    from .tools.web_search import get_search_health_report
+    
+    print("🔍 搜索引擎健康状态报告")
+    print("=" * 50)
+    
+    try:
+        report = get_search_health_report()
+        
+        # 显示可用引擎
+        print(f"\n📊 可用引擎数量: {report['total_available']}")
+        if report['available_engines']:
+            print("✅ 可用引擎列表 (按优先级排序):")
+            for i, engine in enumerate(report['available_engines'], 1):
+                priority = report['engine_priorities'].get(engine, 'N/A')
+                failure_count = report['failure_counts'].get(engine, 0)
+                last_success = report['last_success'].get(engine, '从未成功')
+                
+                print(f"  {i}. {engine}")
+                print(f"     优先级: {priority}")
+                print(f"     失败次数: {failure_count}")
+                print(f"     最后成功: {last_success}")
+        else:
+            print("❌ 当前没有可用的搜索引擎")
+        
+        # 显示黑名单引擎
+        if report['blacklisted_engines']:
+            print("\n🚫 暂时禁用的引擎:")
+            for engine_info in report['blacklisted_engines']:
+                print(f"  - {engine_info['engine']} (剩余 {engine_info['remaining_minutes']} 分钟)")
+        
+        # 显示失败统计
+        if report['failure_counts']:
+            print("\n📈 失败统计:")
+            for engine, count in report['failure_counts'].items():
+                if count > 0:
+                    print(f"  - {engine}: {count} 次失败")
+        
+        print("\n💡 提示:")
+        print("  - 引擎连续失败3次后会被暂时禁用5分钟")
+        print("  - 优先级数字越小表示优先级越高")
+        print("  - 使用 'intellicli search-test' 测试搜索功能")
+        
+    except Exception as e:
+        print(f"❌ 获取健康状态报告时出错: {e}")
 
 @app.callback()
 def callback(ctx: typer.Context):
