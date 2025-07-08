@@ -4,6 +4,8 @@
 
 ## 核心特性
 
+- **🐳 Docker化部署:** 提供完整的Docker解决方案，包含Dockerfile、docker-compose.yml和管理脚本。支持一键部署、数据持久化、服务编排和健康监控，无需配置Python环境即可快速使用。
+
 - **统一模型配置系统:** 首次运行时自动启动交互式配置向导，引导用户完成模型设置。支持多种模型供应商（Ollama、Google Gemini、OpenAI、Claude、DeepSeek），并可为每个模型指定能力标签。
 
 - **智能模型路由:** 根据用户指令的性质和配置的模型能力，IntelliCLI 能够智能地将任务路由到最合适的模型。例如，图像任务自动使用视觉模型，代码任务使用代码模型。
@@ -18,9 +20,76 @@
 
 - **持续会话模式:** 允许用户在一个持续的交互会话中与代理进行对话，迭代地完成任务，并支持错误纠正和重试。
 
+## 🐳 Docker部署优势
+
+### 为什么选择Docker部署？
+
+- **🚀 零配置启动**: 无需安装Python环境和依赖包
+- **📦 一键部署**: 使用 `make quick-start` 即可完成所有配置
+- **🔄 服务编排**: 自动管理IntelliCLI和Ollama服务
+- **💾 数据持久化**: 配置和数据自动保存，重启不丢失
+- **🔧 环境隔离**: 独立的容器环境，不影响主机系统
+- **🏥 健康监控**: 自动监控服务状态和健康检查
+- **🛠️ 便捷管理**: 提供完整的管理工具和脚本
+- **🌐 跨平台**: 支持Windows、macOS和Linux
+
+### 适用场景
+
+- **新手用户**: 无需了解Python环境配置
+- **生产部署**: 稳定可靠的容器化部署
+- **团队协作**: 统一的开发和部署环境
+- **快速体验**: 5分钟即可开始使用
+
 ## 快速开始
 
-### 方法一：全局安装（推荐）
+### 方法一：Docker部署（推荐）
+
+**最简单的部署方式，无需配置Python环境**
+
+#### 1. 克隆仓库
+```bash
+git clone https://github.com/MR-MaoJiu/IntelliCLI.git
+cd IntelliCLI
+```
+
+#### 2. 5分钟快速部署
+```bash
+# 初始化环境
+make init
+
+# 编辑API密钥
+nano .env
+
+# 一键启动
+make quick-start
+
+# 进入交互式会话
+make session
+```
+
+#### 3. 其他Docker命令
+```bash
+# 查看所有可用命令
+make help
+
+# 查看服务状态
+make status
+
+# 查看日志
+make logs
+
+# 停止服务
+make stop
+
+# 清理资源
+make cleanup
+```
+
+> 📚 **详细文档**: 查看 [Docker快速开始指南](DOCKER_QUICKSTART.md) 和 [Docker部署文档](docker/README.md)
+
+### 方法二：全局安装
+
+适合需要在本地环境中使用的用户：
 
 #### 1. 克隆仓库
 ```bash
@@ -49,7 +118,7 @@ intellicli session
 icli session
 ```
 
-### 方法二：开发模式安装
+### 方法三：开发模式安装
 
 适合开发者，支持代码修改后立即生效：
 
@@ -65,7 +134,7 @@ pip install -e .[dev]
 intellicli session
 ```
 
-### 方法三：本地运行（传统方式）
+### 方法四：本地运行（传统方式）
 
 ```bash
 # 克隆仓库
@@ -198,7 +267,39 @@ logging:
 
 ## 使用方法
 
-### 基本命令
+### Docker部署命令
+
+如果您使用Docker部署，推荐使用以下命令：
+
+```bash
+# 启动交互式会话
+make session
+
+# 查看服务状态
+make status
+
+# 查看日志
+make logs
+
+# 重启服务
+make restart
+
+# 停止服务
+make stop
+
+# 配置向导
+make config
+
+# 配置复盘功能
+make review-config
+
+# 查看所有可用命令
+make help
+```
+
+### 全局安装命令
+
+如果您使用全局安装：
 
 ```bash
 # 启动交互式会话
@@ -451,9 +552,22 @@ IntelliCLI/
 │   │   └── image_processor.py # 图像处理工具
 │   └── /ui                    # 用户界面
 │       └── display.py         # 现代化CLI界面
-└── /docs                      # 文档目录
-    ├── 配置系统说明.md        # 配置系统详细说明
-    └── 快速安装指南.md        # 快速安装指南
+├── /docs                      # 文档目录
+│   ├── 配置系统说明.md        # 配置系统详细说明
+│   └── 快速安装指南.md        # 快速安装指南
+├── /docker                    # Docker部署相关
+│   └── README.md              # Docker详细部署文档
+├── Dockerfile                 # Docker镜像构建文件
+├── docker-compose.yml         # Docker Compose服务编排
+├── .dockerignore              # Docker构建忽略文件
+├── docker-deploy.sh           # Docker部署脚本
+├── Makefile                   # Make命令定义
+├── env.example                # 环境变量配置示例
+├── DOCKER_QUICKSTART.md       # Docker快速开始指南
+├── DOCKER_SUMMARY.md          # Docker功能总结
+├── config/                    # 配置文件目录（Docker持久化）
+├── data/                      # 数据目录（Docker持久化）
+└── workspace/                 # 工作目录（Docker可选挂载）
 ```
 
 ## 高级功能
@@ -515,7 +629,25 @@ export BING_SEARCH_API_KEY="your_bing_api_key"
 
 ## 卸载
 
-如果您需要卸载 IntelliCLI：
+### Docker部署卸载
+
+如果您使用Docker部署：
+
+```bash
+# 停止并删除容器
+make stop
+
+# 清理所有Docker资源
+make cleanup
+
+# 删除项目目录（可选）
+cd ..
+rm -rf IntelliCLI
+```
+
+### 本地安装卸载
+
+如果您使用本地安装：
 
 ```bash
 # 使用 pip 卸载
@@ -578,9 +710,39 @@ A: 支持常见的图像格式：PNG、JPG、JPEG、GIF、BMP、TIFF、WebP。
 
 A: 使用具体的关键词，配置高质量的搜索引擎（如Google、Bing），系统会自动选择最合适的引擎并整合结果。
 
+### Q: Docker部署和本地安装有什么区别？
+
+A: Docker部署无需配置Python环境，提供完整的容器化解决方案，包括数据持久化和服务编排。本地安装直接在系统中运行，更适合开发和定制。
+
+### Q: 如何在Docker中配置API密钥？
+
+A: 编辑项目根目录的 `.env` 文件，填入您的API密钥，然后重启Docker服务：`make restart`。
+
+### Q: Docker容器启动失败怎么办？
+
+A: 使用 `make logs` 查看详细错误信息，使用 `make status` 检查服务状态。常见问题包括端口占用、API密钥配置错误等。
+
+### Q: 如何在Docker中持久化数据？
+
+A: 配置文件存储在 `./config` 目录，历史数据存储在 `./data` 目录，工作文件存储在 `./workspace` 目录。这些目录会自动挂载到容器中。
+
+### Q: 如何更新Docker版本？
+
+A: 使用 `make stop` 停止服务，`git pull` 拉取最新代码，`make build` 重新构建镜像，`make start` 启动服务。
+
 ## 更新日志
 
-### v2.0.0 (最新)
+### v2.1.0 (最新)
+- 🐳 **新增完整Docker支持**: 提供Dockerfile、docker-compose.yml和管理脚本
+- 📦 **一键部署**: 支持 `make quick-start` 快速部署
+- 🔄 **服务编排**: 集成Ollama本地LLM服务
+- 💾 **数据持久化**: 配置、数据和工作空间的持久化存储
+- 🛠️ **管理工具**: 提供Makefile和部署脚本，简化Docker管理
+- 📚 **完整文档**: 包含快速开始指南和详细部署文档
+- 🔧 **环境变量管理**: 安全的API密钥配置方式
+- 🏥 **健康监控**: 自动监控服务状态和健康检查
+
+### v2.0.0
 - ✨ 新增智能搜索引擎系统，支持多引擎智能切换
 - 🔄 实现搜索引擎故障转移和健康监控
 - 🎯 优化模型路由，支持更多模型供应商

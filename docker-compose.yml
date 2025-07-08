@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  intellicli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: intellicli:latest
+    container_name: intellicli-app
+    restart: unless-stopped
+    
+    # 环境变量
+    environment:
+      - PYTHONPATH=/app
+      - INTELLICLI_CONFIG_PATH=/app/config/config.yaml
+      # 模型API密钥（通过环境变量传递）
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - BING_SEARCH_API_KEY=${BING_SEARCH_API_KEY:-}
+      - GOOGLE_SEARCH_API_KEY=${GOOGLE_SEARCH_API_KEY:-}
+      - GOOGLE_SEARCH_ENGINE_ID=${GOOGLE_SEARCH_ENGINE_ID:-}
+    
+    # 端口映射
+    ports:
+      - "8000:8000"
+    
+    # 数据卷挂载
+    volumes:
+      # 配置文件持久化
+      - ./config:/app/config
+      # 数据持久化（历史记录等）
+      - ./data:/app/data
+      # 工作目录挂载（可选，用于文件操作）
+      - ./workspace:/app/workspace
+    
+    # 网络设置
+    networks:
+      - intellicli-network
+    
+    # 启动命令（交互式session）
+    command: ["python", "main.py", "session"]
+    
+    # 使用tty和stdin保持交互
+    tty: true
+    stdin_open: true
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import intellicli; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Ollama服务（本地LLM支持）
+  ollama:
+    image: ollama/ollama:latest
+    container_name: intellicli-ollama
+    restart: unless-stopped
+    
+    ports:
+      - "11434:11434"
+    
+    volumes:
+      - ollama-data:/root/.ollama
+    
+    networks:
+      - intellicli-network
+    
+    # GPU支持（如果有NVIDIA GPU）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+# 网络定义
+networks:
+  intellicli-network:
+    driver: bridge
+
+# 数据卷定义
+volumes:
+  ollama-data:
+    driver: local 
