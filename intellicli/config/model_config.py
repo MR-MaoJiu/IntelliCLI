@@ -165,7 +165,7 @@ class ModelConfigManager:
         # 配置搜索引擎（可选）
         search_config = self._configure_search_engines()
         
-        # 生成完整配置
+        # 生成完整配置（复盘功能可通过 review-config 命令单独配置）
         config = self._generate_config(models, primary_model, search_config)
         
         # 保存配置
@@ -386,7 +386,120 @@ class ModelConfigManager:
         
         return search_config
     
-    def _generate_config(self, models: List[Dict[str, Any]], primary_model: str, search_config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _configure_task_review(self) -> Dict[str, Any]:
+        """配置任务复盘功能"""
+        ui.print_section_header("任务复盘功能配置", "📋")
+        ui.print_info("任务复盘功能可以在任务完成后自动分析执行结果，")
+        ui.print_info("识别问题并提供改进建议。")
+        ui.print_info("")
+        
+        # 询问是否启用复盘功能
+        enable_review = ui.get_user_input("是否启用任务复盘功能？(y/N)").lower()
+        
+        if enable_review not in ['y', 'yes', '是']:
+            ui.print_info("已跳过任务复盘功能配置")
+            return {"enabled": False}
+        
+        review_config = {"enabled": True}
+        
+        # 询问是否自动复盘
+        auto_review = ui.get_user_input("是否在任务完成后自动进行复盘？(y/N)").lower()
+        review_config["auto_review"] = auto_review in ['y', 'yes', '是']
+        
+        # 配置复盘阈值
+        ui.print_info("")
+        ui.print_info("复盘阈值：当任务成功率低于此值时触发复盘（0.0-1.0）")
+        while True:
+            threshold_input = ui.get_user_input("请输入复盘阈值 (默认: 0.8):")
+            if not threshold_input:
+                review_config["review_threshold"] = 0.8
+                break
+            try:
+                threshold = float(threshold_input)
+                if 0.0 <= threshold <= 1.0:
+                    review_config["review_threshold"] = threshold
+                    break
+                else:
+                    ui.print_error("阈值必须在 0.0-1.0 之间")
+            except ValueError:
+                ui.print_error("请输入有效的数字")
+        
+        # 配置最大迭代次数
+        ui.print_info("")
+        ui.print_info("最大迭代次数：复盘改进的最大循环次数")
+        while True:
+            iterations_input = ui.get_user_input("请输入最大迭代次数 (默认: 3):")
+            if not iterations_input:
+                review_config["max_iterations"] = 3
+                break
+            try:
+                iterations = int(iterations_input)
+                if iterations > 0:
+                    review_config["max_iterations"] = iterations
+                    break
+                else:
+                    ui.print_error("迭代次数必须大于 0")
+            except ValueError:
+                ui.print_error("请输入有效的整数")
+        
+        ui.print_success("✅ 任务复盘功能配置完成")
+        ui.print_info(f"   启用状态: {'是' if review_config['enabled'] else '否'}")
+        ui.print_info(f"   自动复盘: {'是' if review_config['auto_review'] else '否'}")
+        ui.print_info(f"   复盘阈值: {review_config['review_threshold']}")
+        ui.print_info(f"   最大迭代: {review_config['max_iterations']}")
+        ui.print_info("")
+        
+        return review_config
+    
+    def configure_review_only(self):
+        """单独配置复盘功能"""
+        ui.print_section_header("复盘功能配置", "🔍")
+        
+        if not os.path.exists(self.config_path):
+            ui.print_error("❌ 配置文件不存在，请先运行 config-wizard 配置基本模型")
+            return False
+        
+        try:
+            # 读取现有配置
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+        except Exception as e:
+            ui.print_error(f"❌ 读取配置文件失败: {e}")
+            return False
+        
+        # 显示当前复盘配置状态
+        current_review = config.get('task_review', {})
+        ui.print_info("📋 当前复盘功能状态:")
+        ui.print_info(f"   启用状态: {'是' if current_review.get('enabled', False) else '否'}")
+        ui.print_info(f"   自动复盘: {'是' if current_review.get('auto_review', False) else '否'}")
+        ui.print_info(f"   复盘阈值: {current_review.get('review_threshold', 0.8)}")
+        ui.print_info(f"   最大迭代: {current_review.get('max_iterations', 3)}")
+        ui.print_info("")
+        
+        # 配置新的复盘设置
+        review_config = self._configure_task_review()
+        
+        # 更新配置
+        config['task_review'] = review_config
+        
+        # 保存配置
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config, f, default_flow_style=False, allow_unicode=True, indent=2)
+            
+            ui.print_success("✅ 复盘功能配置已更新！")
+            ui.print_info("")
+            ui.print_info("📋 新的复盘功能配置:")
+            ui.print_info(f"   启用状态: {'是' if review_config['enabled'] else '否'}")
+            ui.print_info(f"   自动复盘: {'是' if review_config.get('auto_review', False) else '否'}")
+            ui.print_info(f"   复盘阈值: {review_config.get('review_threshold', 0.8)}")
+            ui.print_info(f"   最大迭代: {review_config.get('max_iterations', 3)}")
+            return True
+        except Exception as e:
+            ui.print_error(f"❌ 保存配置失败: {e}")
+            return False
+    
+    def _generate_config(self, models: List[Dict[str, Any]], primary_model: str, search_config: Dict[str, Any] = None, review_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """生成完整配置"""
         config = {
             "models": {
@@ -404,6 +517,18 @@ class ModelConfigManager:
                 "level": "INFO"
             }
         }
+        
+        # 只有在提供了review_config时才添加复盘配置
+        if review_config is not None:
+            config["task_review"] = review_config
+        else:
+            # 默认的复盘配置（禁用状态）
+            config["task_review"] = {
+                "enabled": False,
+                "auto_review": False,
+                "review_threshold": 0.8,
+                "max_iterations": 3
+            }
         
         # 添加搜索引擎配置
         if search_config and search_config.get("engines"):
@@ -530,6 +655,20 @@ class ModelConfigManager:
                     ui.print_info("")
             else:
                 ui.print_warning("配置文件格式不正确")
+            
+            # 显示复盘功能配置
+            if 'task_review' in config:
+                review_config = config['task_review']
+                ui.print_info("📋 复盘功能配置:")
+                ui.print_info(f"   启用状态: {'是' if review_config.get('enabled', False) else '否'}")
+                ui.print_info(f"   自动复盘: {'是' if review_config.get('auto_review', False) else '否'}")
+                ui.print_info(f"   复盘阈值: {review_config.get('review_threshold', 0.8)}")
+                ui.print_info(f"   最大迭代: {review_config.get('max_iterations', 3)}")
+                ui.print_info("")
+            else:
+                ui.print_info("📋 复盘功能配置:")
+                ui.print_info("   启用状态: 否 (未配置)")
+                ui.print_info("")
                 
         except Exception as e:
             ui.print_error(f"读取配置失败: {e}")

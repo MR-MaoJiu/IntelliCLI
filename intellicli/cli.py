@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from .agent.planner import Planner
 from .agent.executor import Executor
 from .agent.model_router import ModelRouter
+from .agent.agent import Agent as IntelliAgent
 from .config.model_config import ModelConfigManager
 from .config.search_config import SearchConfigManager
 from .models.ollama_client import OllamaClient
@@ -150,6 +151,8 @@ class Agent:
             "last_operations": [],
             "project_context": ""
         }
+        # 任务执行历史（用于复盘功能）
+        self.execution_history = []
 
     def _update_session_memory(self, plan: List[Dict[str, Any]], results: List[Dict[str, Any]]):
         """更新会话记忆"""
@@ -289,6 +292,8 @@ class Agent:
                 ui.print_execution_summary(total_steps, success_steps, len(failed_steps))
                 
                 if not failed_steps:
+                    # 记录成功完成的任务到历史中
+                    self._record_task_to_history(goal, current_plan, execution_results, True)
                     return True # 任务成功完成
                 else:
                     ui.print_info(f"尝试重新规划...")
@@ -300,6 +305,10 @@ class Agent:
                 return False
         
         ui.print_error("代理在多次尝试后未能完成任务。")
+        # 记录失败的任务到历史中
+        if current_plan:
+            final_results = self.context[-1].get('results', []) if self.context else []
+            self._record_task_to_history(goal, current_plan, final_results, False)
         return False
 
     def _execute_plan_with_ui(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -421,6 +430,36 @@ class Agent:
         
         return True
 
+    def _record_task_to_history(self, goal: str, plan: List[Dict[str, Any]], results: List[Dict[str, Any]], success: bool):
+        """记录任务到执行历史中（用于复盘功能）"""
+        from datetime import datetime
+        
+        # 计算成功率
+        total_steps = len(results)
+        successful_steps = len([r for r in results if r.get('status') == 'completed'])
+        success_rate = (successful_steps / total_steps * 100) if total_steps > 0 else 0
+        
+        # 构建历史记录条目
+        history_entry = {
+            'goal': goal,
+            'success_rate': success_rate,
+            'reviewed': False,  # 还未复盘
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'plan': plan,
+            'results': results,
+            'status': 'completed' if success else 'failed'
+        }
+        
+        self.execution_history.append(history_entry)
+        
+        # 限制历史记录数量，保留最近的20条
+        if len(self.execution_history) > 20:
+            self.execution_history = self.execution_history[-20:]
+
+    def get_execution_history(self) -> List[Dict[str, Any]]:
+        """获取执行历史（兼容复盘功能）"""
+        return self.execution_history
+
     def clear_session_memory(self):
         """清空会话记忆"""
         self.session_memory = {
@@ -440,6 +479,92 @@ class Agent:
         for alias, info in models_info.items():
             capabilities = ", ".join(info["capabilities"])
             ui.print_info(f"• {alias}: {info['model_name']} ({info['provider']}) - {capabilities}")
+
+    def _handle_review_command(self):
+        """处理session模式下的review命令"""
+        try:
+            config = load_config()
+            
+            # 检查复盘功能是否启用
+            review_config = config.get('task_review', {})
+            if not review_config.get('enabled', False):
+                ui.print_review_disabled()
+                return
+            
+            # 检查是否有执行历史
+            if not self.execution_history:
+                ui.print_warning("没有可复盘的任务历史")
+                return
+            
+            # 初始化模型客户端
+            primary_client = get_model_client(config)
+            
+            # 使用当前Agent的历史记录进行复盘
+            ui.print_info("🔍 开始复盘最近的任务")
+            
+            # 获取最近的任务
+            last_execution = self.execution_history[-1]
+            goal = last_execution['goal']
+            plan = last_execution.get('plan', [])
+            results = last_execution.get('results', [])
+            
+            ui.print_info(f"复盘目标: {goal}")
+            
+            # 创建任务复盘器进行分析
+            from .agent.task_reviewer import TaskReviewer
+            task_reviewer = TaskReviewer(primary_client)
+            
+            review_result = task_reviewer.review_task_execution(
+                original_goal=goal,
+                execution_plan=plan,
+                execution_results=results
+            )
+            
+            # 显示复盘结果
+            self._display_review_results(review_result)
+            
+            # 标记为已复盘
+            last_execution['reviewed'] = True
+            
+            ui.print_success("✅ 复盘完成")
+                
+        except Exception as e:
+            ui.print_error(f"复盘过程中出错: {e}")
+
+    def _handle_history_command(self):
+        """处理session模式下的history命令"""
+        try:
+            # 直接使用当前Agent的执行历史
+            ui.print_task_history(self.execution_history)
+                
+        except Exception as e:
+            ui.print_error(f"获取历史记录时出错: {e}")
+
+    def _display_review_results(self, review_result: Dict[str, Any]):
+        """显示复盘结果"""
+        overall_assessment = review_result.get('overall_assessment', {})
+        
+        ui.print_info(f"📊 整体评分: {overall_assessment.get('overall_score', 0)}/100")
+        ui.print_info(f"🏆 评级: {overall_assessment.get('grade', '未知')}")
+        ui.print_info(f"📝 总结: {overall_assessment.get('summary', '无')}")
+        
+        # 显示目标达成情况
+        goal_achievement = review_result.get('goal_achievement', {})
+        ui.print_info(f"🎯 目标达成度: {goal_achievement.get('achievement_percentage', 0)}%")
+        
+        # 显示问题列表
+        issues = review_result.get('issues_identified', [])
+        if issues:
+            ui.print_warning(f"⚠️ 发现 {len(issues)} 个问题:")
+            for issue in issues[:3]:  # 只显示前3个问题
+                ui.print_info(f"   - {issue.get('description', '未知问题')}")
+        
+        # 显示改进建议
+        suggestions = review_result.get('improvement_suggestions', [])
+        if suggestions:
+            ui.print_info(f"💡 改进建议:")
+            for suggestion in suggestions[:3]:  # 只显示前3个建议
+                ui.print_info(f"   - {suggestion.get('suggestion', '无建议')}")
 
     def start_session(self):
         """启动一个持续的交互会话"""
@@ -462,6 +587,12 @@ class Agent:
                 continue
             elif user_input.lower() == 'models':
                 self.show_model_info()
+                continue
+            elif user_input.lower() == 'review':
+                self._handle_review_command()
+                continue
+            elif user_input.lower() == 'history':
+                self._handle_history_command()
                 continue
             
             if not self.task_active:
@@ -494,8 +625,56 @@ def chat(prompt: str, ctx: typer.Context):
     print(response)
 
 @app.command()
+def task(
+    prompt: str, 
+    ctx: typer.Context,
+    enable_review: bool = typer.Option(False, "--review", "-r", help="启用任务复盘功能")
+):
+    """
+    执行复杂任务，支持规划、执行和复盘功能。
+    """
+    config = ctx.obj["config"]
+    
+    # 检查是否启用复盘功能
+    review_config = config.get('task_review', {})
+    should_review = enable_review or review_config.get('auto_review', False)
+    
+    if should_review and review_config.get('enabled', False):
+        # 使用新的智能代理执行任务（支持复盘）
+        primary_client = get_model_client(config)
+        intelli_agent = IntelliAgent(primary_client, config)
+        
+        ui.print_section_header("IntelliCLI 智能任务执行", "🤖")
+        ui.print_info(f"🎯 目标: {prompt}")
+        
+        result = intelli_agent.execute_task(prompt, enable_review=should_review)
+        
+        if result['status'] in ['completed', 'mostly_completed']:
+            ui.print_success("✅ 任务成功完成！")
+        else:
+            ui.print_error("❌ 任务未能完成。")
+    else:
+        # 使用原有的Agent类执行任务
+        agent = ctx.obj["agent"]
+        agent.current_goal = prompt
+        agent.task_active = True
+        
+        ui.print_section_header("IntelliCLI 任务执行", "🤖")
+        ui.print_info(f"🎯 目标: {prompt}")
+        
+        success = agent._run_task_iteration(prompt)
+        
+        if success:
+            ui.print_success("✅ 任务成功完成！")
+        else:
+            ui.print_error("❌ 任务未能完成。")
+        
+        agent.task_active = False
+
+@app.command()
 def session(ctx: typer.Context):
     """启动一个持续的 IntelliCLI 会话。"""
+    # 使用原有的Agent类进行会话
     agent = ctx.obj["agent"]
     agent.start_session()
 
@@ -548,6 +727,18 @@ def config_reset():
             raise typer.Exit(code=1)
     except Exception as e:
         ui.print_error(f"重置配置时出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command(name="review-config")
+def review_config():
+    """配置复盘功能"""
+    try:
+        config_manager = ModelConfigManager()
+        success = config_manager.configure_review_only()
+        if not success:
+            raise typer.Exit(code=1)
+    except Exception as e:
+        ui.print_error(f"配置复盘功能时出错: {e}")
         raise typer.Exit(code=1)
 
 @app.command(name="search-config")
@@ -694,6 +885,68 @@ def search_health():
         
     except Exception as e:
         print(f"❌ 获取健康状态报告时出错: {e}")
+
+@app.command()
+def review(
+    goal: Optional[str] = typer.Option(None, "--goal", "-g", help="指定要复盘的任务目标"),
+    auto_fix: bool = typer.Option(False, "--auto-fix", "-f", help="自动执行补充计划")
+):
+    """
+    对任务执行结果进行复盘分析
+    """
+    try:
+        config = load_config()
+        
+        # 检查复盘功能是否启用
+        review_config = config.get('task_review', {})
+        if not review_config.get('enabled', False):
+            ui.print_review_disabled()
+            return
+        
+        # 初始化模型客户端
+        primary_client = get_model_client(config)
+        
+        # 创建智能代理
+        agent = IntelliAgent(primary_client, config)
+        
+        # 执行手动复盘
+        if goal:
+            ui.print_info(f"🔍 开始复盘任务: {goal}")
+        else:
+            ui.print_info("🔍 开始复盘最近的任务")
+        
+        review_result = agent.manual_review(goal)
+        
+        if review_result:
+            ui.print_success("✅ 复盘完成")
+        else:
+            ui.print_warning("⚠️ 复盘未找到相关任务")
+            
+    except Exception as e:
+        ui.print_error(f"复盘过程中出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command()
+def history():
+    """
+    显示任务执行历史
+    """
+    try:
+        config = load_config()
+        primary_client = get_model_client(config)
+        
+        # 创建智能代理
+        agent = IntelliAgent(primary_client, config)
+        
+        # 获取执行历史
+        history = agent.get_execution_history()
+        
+        # 使用新的UI函数显示历史
+        ui.print_task_history(history)
+            
+    except Exception as e:
+        ui.print_error(f"获取历史记录时出错: {e}")
+        raise typer.Exit(code=1)
 
 @app.callback()
 def callback(ctx: typer.Context):

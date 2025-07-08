@@ -259,11 +259,117 @@ class ModernUI:
             "",
             f"🎊 {self._colorize('任务完成！', Colors.BRIGHT_GREEN)}",
             f"   {self._colorize('您可以输入新任务或输入 exit 退出', Colors.DIM)}",
+            f"   {self._colorize('💡 提示：可以使用 review 命令手动复盘此次任务', Colors.BRIGHT_BLUE)}",
             ""
         ]
         
         for line in completion_message:
             self._print(line)
+    
+    def print_review_header(self, success_rate: float, threshold: float):
+        """显示复盘开始信息"""
+        self.print_section_header("任务复盘", "🔍")
+        self._print(f"开始复盘分析（成功率: {success_rate:.1f}%，阈值: {threshold:.1f}%）", Colors.BRIGHT_YELLOW)
+    
+    def print_review_result(self, review_result: Dict[str, Any]):
+        """显示复盘结果"""
+        # 显示整体评分
+        overall_score = review_result.get('overall_score', 0)
+        grade = review_result.get('grade', '未知')
+        summary = review_result.get('summary', '无摘要')
+        
+        score_color = Colors.BRIGHT_GREEN if overall_score >= 80 else Colors.BRIGHT_YELLOW if overall_score >= 60 else Colors.BRIGHT_RED
+        
+        self._print(f"📊 整体评分: {overall_score}/100", score_color)
+        self._print(f"🏆 评级: {grade}", score_color)
+        self._print(f"📝 总结: {summary}", Colors.BRIGHT_WHITE)
+        
+        # 显示目标达成度
+        if 'goal_achievement' in review_result:
+            goal_score = review_result['goal_achievement']
+            self._print(f"🎯 目标达成度: {goal_score}%", Colors.BRIGHT_CYAN)
+        
+        # 显示发现的问题
+        issues = review_result.get('issues', [])
+        if issues:
+            self._print(f"⚠️ 发现 {len(issues)} 个问题:", Colors.BRIGHT_YELLOW)
+            for issue in issues:
+                self._print(f"   - {issue}", Colors.YELLOW)
+        
+        # 显示改进建议
+        suggestions = review_result.get('suggestions', [])
+        if suggestions:
+            self._print(f"💡 改进建议:", Colors.BRIGHT_BLUE)
+            for suggestion in suggestions:
+                self._print(f"   - {suggestion}", Colors.BLUE)
+    
+    def print_review_improvement(self, iteration: int):
+        """显示复盘改进信息"""
+        self.print_section_header("执行补充计划", "🔧")
+        self._print(f"第 {iteration} 次改进迭代", Colors.BRIGHT_YELLOW)
+    
+    def print_review_improvement_success(self, iteration: int):
+        """显示改进成功信息"""
+        self._print(f"✅ 第 {iteration} 次改进成功！", Colors.BRIGHT_GREEN)
+    
+    def print_review_improvement_failed(self, iteration: int, error: str):
+        """显示改进失败信息"""
+        self._print(f"❌ 第 {iteration} 次改进失败: {error}", Colors.BRIGHT_RED)
+    
+    def print_review_final_result(self, final_success_rate: float, iterations: int):
+        """显示最终复盘结果"""
+        self._print("", Colors.RESET)
+        if final_success_rate >= 0.8:
+            self._print(f"🎉 复盘改进完成！最终成功率: {final_success_rate:.1f}% (共 {iterations} 次迭代)", Colors.BRIGHT_GREEN)
+        else:
+            self._print(f"⚠️ 复盘改进结束，最终成功率: {final_success_rate:.1f}% (共 {iterations} 次迭代)", Colors.BRIGHT_YELLOW)
+    
+    def print_review_disabled(self):
+        """显示复盘功能未启用信息"""
+        self._print("💡 复盘功能未启用。要启用复盘功能，请运行:", Colors.BRIGHT_BLUE)
+        self._print("   intellicli review-config", Colors.BRIGHT_CYAN)
+        self._print("   或编辑 config.yaml 文件设置 task_review.enabled: true", Colors.BRIGHT_CYAN)
+    
+    def print_review_config_status(self, enabled: bool, auto_review: bool, threshold: float, max_iterations: int):
+        """显示复盘配置状态"""
+        self._print("📋 复盘功能配置状态:", Colors.BRIGHT_BLUE)
+        self._print(f"   启用状态: {'✅ 是' if enabled else '❌ 否'}", Colors.BRIGHT_GREEN if enabled else Colors.BRIGHT_RED)
+        if enabled:
+            self._print(f"   自动复盘: {'✅ 是' if auto_review else '❌ 否'}", Colors.BRIGHT_GREEN if auto_review else Colors.BRIGHT_YELLOW)
+            self._print(f"   复盘阈值: {threshold}", Colors.BRIGHT_CYAN)
+            self._print(f"   最大迭代: {max_iterations}", Colors.BRIGHT_CYAN)
+    
+    def print_task_history(self, history: List[Dict[str, Any]]):
+        """显示任务执行历史"""
+        if not history:
+            self._print("📋 暂无任务执行历史", Colors.BRIGHT_YELLOW)
+            return
+        
+        self.print_section_header("任务执行历史", "📚")
+        
+        for i, task in enumerate(history, 1):
+            goal = task.get('goal', '未知任务')
+            success_rate = task.get('success_rate', 0)
+            reviewed = task.get('reviewed', False)
+            timestamp = task.get('timestamp', '未知时间')
+            
+            # 根据成功率选择图标和颜色
+            if success_rate >= 90:
+                icon = "✅"
+                color = Colors.BRIGHT_GREEN
+            elif success_rate >= 70:
+                icon = "🟡"
+                color = Colors.BRIGHT_YELLOW
+            else:
+                icon = "❌"
+                color = Colors.BRIGHT_RED
+            
+            review_status = "🔍" if reviewed else "⏸️"
+            
+            self._print(f"{i}. {icon} {goal}", color)
+            self._print(f"   成功率: {success_rate:.1f}% | 复盘: {review_status}", Colors.DIM)
+            self._print(f"   时间: {timestamp}", Colors.DIM)
+            self._print("", Colors.RESET)
     
     def print_error(self, error_message: str):
         """显示错误信息"""
@@ -342,6 +448,11 @@ class ModernUI:
             f"   • {Colors.BRIGHT_CYAN}search-test{Colors.RESET} - 测试搜索功能",
             f"   • {Colors.BRIGHT_CYAN}search-health{Colors.RESET} - 查看搜索引擎健康状态",
             "",
+            "🔍 复盘功能:",
+            f"   • {Colors.BRIGHT_MAGENTA}review{Colors.RESET} - 对任务执行结果进行复盘分析",
+            f"   • {Colors.BRIGHT_MAGENTA}history{Colors.RESET} - 显示任务执行历史",
+            f"   • {Colors.BRIGHT_MAGENTA}task --review{Colors.RESET} - 执行任务并启用复盘",
+            "",
             "⌨️  高级输入功能:",
             f"   • {Colors.BRIGHT_GREEN}方向键{Colors.RESET} - 左右移动光标，上下浏览历史",
             f"   • {Colors.BRIGHT_GREEN}Tab{Colors.RESET} - 自动补全常用词汇",
@@ -373,6 +484,7 @@ class ModernUI:
             "   • 具备上下文记忆，可以理解连续的任务",
             "   • 涉及图像的任务会自动使用视觉模型",
             "   • 需要网络搜索的任务会自动使用搜索引擎",
+            "   • 启用复盘功能可以自动分析任务结果并改进",
             "",
             "🎯 示例任务:",
             "   • 创建一个简单的网页",
@@ -382,6 +494,12 @@ class ModernUI:
             "   • 识别截图中的内容 (自动使用视觉模型)",
             "   • 编写复杂的算法 (自动使用代码模型)",
             "   • 搜索最新的Python开发资讯 (自动使用搜索引擎)",
+            "",
+            "🔍 复盘功能示例:",
+            "   • intellicli task '创建网页' --review (执行任务并复盘)",
+            "   • intellicli review --goal '创建网页' (手动复盘指定任务)",
+            "   • intellicli review --auto-fix (复盘并自动修复问题)",
+            "   • intellicli history (查看任务执行历史)",
             ""
         ]
         
