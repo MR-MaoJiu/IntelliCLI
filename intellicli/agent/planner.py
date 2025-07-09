@@ -47,7 +47,7 @@ class Planner:
                 tool_descriptions.append(f"- {tool_name}: {tool_desc}")
         
         prompt = f"""
-您是一位运行在 {system_info['os_name']} 系统上的智能任务规划代理。您的任务是将一个高级目标分解为一系列精确、可执行的步骤。
+您是一位运行在 {system_info['os_name']} 系统上的智能任务规划代理（IntelliCLI）。您的任务是将一个高级目标分解为一系列精确、可执行的步骤。
 
 **当前系统环境:**
 - 操作系统: {system_info['os_name']} ({system_info['os_version']})
@@ -64,7 +64,7 @@ class Planner:
 {chr(10).join(tool_descriptions)}
 
 **关键规则:**
-1. 仔细分析目标，选择最合适的工具
+1. 仔细分析目标，明确用户的核心需求，选择最合适的工具
 2. 使用正确的参数名称（如上所示）
 3. 确保参数类型正确
 4. 根据当前系统环境调整命令和路径
