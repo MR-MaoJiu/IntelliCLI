@@ -10,14 +10,31 @@ from typing import Dict, List, Optional, Any
 from collections import defaultdict
 import subprocess
 
+# 全局模型客户端变量
+_global_model_client = None
+
+def set_model_client(model_client):
+    """设置全局模型客户端"""
+    global _global_model_client
+    _global_model_client = model_client
+
+def get_model_client():
+    """获取当前的模型客户端"""
+    return _global_model_client
+
 class DocumentManager:
-    """文档管理器"""
+    """文档管理和生成工具"""
     
     def __init__(self, project_root: str = "."):
         self.project_root = project_root
-        self.doc_extensions = ['.md', '.txt', '.rst', '.adoc', '.html', '.pdf']
+        self.model_client = None
+        self.doc_extensions = ['.md', '.txt', '.rst', '.doc', '.docx', '.pdf', '.html']
         self.code_extensions = ['.py', '.js', '.ts', '.java', '.cpp', '.c', '.go', '.rs', '.php']
         
+    def set_model_client(self, model_client):
+        """设置文档管理使用的模型客户端"""
+        self.model_client = model_client
+
     def find_documents(self) -> List[Dict[str, Any]]:
         """查找所有文档文件"""
         documents = []
@@ -92,130 +109,153 @@ class DocumentManager:
         return results
     
     def generate_project_readme(self) -> str:
-        """生成项目README"""
-        readme_content = []
+        """生成项目README文档"""
+        # 使用全局模型客户端或实例模型客户端
+        model_client = _global_model_client or self.model_client
         
-        # 项目标题
-        project_name = os.path.basename(os.path.abspath(self.project_root))
-        readme_content.append(f"# {project_name}\n")
+        if not model_client:
+            return "未设置模型客户端，无法生成README文档"
         
-        # 项目结构
-        readme_content.append("## 项目结构\n")
-        readme_content.append("```")
-        
-        # 生成目录树
-        for root, dirs, files in os.walk(self.project_root):
-            # 跳过隐藏目录
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__', 'venv', 'env']]
+        try:
+            # 获取项目结构信息
+            project_structure = self.analyze_project_structure()
             
-            level = root.replace(self.project_root, '').count(os.sep)
-            indent = '  ' * level
-            folder_name = os.path.basename(root)
-            if level == 0:
-                readme_content.append(f"{project_name}/")
-            else:
-                readme_content.append(f"{indent}{folder_name}/")
+            # 查找现有文档
+            existing_docs = self.find_documents()
             
-            # 添加文件
-            subindent = '  ' * (level + 1)
-            for file in files:
-                if not file.startswith('.'):
-                    readme_content.append(f"{subindent}{file}")
-        
-        readme_content.append("```\n")
-        
-        # 文件统计
-        readme_content.append("## 文件统计\n")
-        
-        file_stats = defaultdict(int)
-        total_files = 0
-        total_lines = 0
-        
-        for root, dirs, files in os.walk(self.project_root):
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__', 'venv', 'env']]
+            # 构建生成提示
+            prompt = f"""
+            请根据以下项目信息生成一个专业的README.md文档：
             
-            for file in files:
-                if file.startswith('.'):
-                    continue
-                    
-                file_path = os.path.join(root, file)
-                _, ext = os.path.splitext(file)
-                
-                if ext:
-                    file_stats[ext.lower()] += 1
-                    total_files += 1
-                    
-                    # 计算行数
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            lines = len(f.readlines())
-                            total_lines += lines
-                    except:
-                        pass
-        
-        readme_content.append(f"- 总文件数: {total_files}")
-        readme_content.append(f"- 总代码行数: {total_lines}")
-        readme_content.append("")
-        
-        # 按文件类型统计
-        readme_content.append("### 文件类型统计\n")
-        for ext, count in sorted(file_stats.items()):
-            readme_content.append(f"- {ext}: {count} 个文件")
-        
-        readme_content.append("")
-        
-        # 查找现有文档
-        documents = self.find_documents()
-        if documents:
-            readme_content.append("## 文档文件\n")
-            for doc in documents:
-                readme_content.append(f"- [{doc['name']}]({doc['path']})")
-        
-        return '\n'.join(readme_content)
+            项目结构：
+            {project_structure}
+            
+            现有文档：
+            {existing_docs}
+            
+            请生成包含以下部分的README：
+            1. 项目标题和简介
+            2. 功能特性
+            3. 安装说明
+            4. 使用方法
+            5. 项目结构说明
+            6. 贡献指南
+            7. 许可证信息
+            
+            请使用Markdown格式，内容要详细且专业。
+            """
+            
+            return model_client.generate(prompt)
+            
+        except Exception as e:
+            return f"生成README文档时出错: {e}"
     
     def extract_api_documentation(self) -> Dict[str, Any]:
         """提取API文档"""
-        api_docs = {
-            'functions': [],
-            'classes': [],
-            'constants': []
-        }
+        # 使用全局模型客户端或实例模型客户端
+        model_client = _global_model_client or self.model_client
         
-        # 查找Python文件
-        for root, dirs, files in os.walk(self.project_root):
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'venv', 'env']]
+        if not model_client:
+            return {"error": "未设置模型客户端，无法提取API文档"}
+        
+        try:
+            # 查找Python文件
+            python_files = []
+            for root, dirs, files in os.walk(self.project_root):
+                for file in files:
+                    if file.endswith('.py'):
+                        python_files.append(os.path.join(root, file))
             
-            for file in files:
-                if file.endswith('.py'):
-                    file_path = os.path.join(root, file)
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                        
-                        # 提取函数和类
-                        import ast
-                        tree = ast.parse(content)
-                        
-                        for node in ast.walk(tree):
-                            if isinstance(node, ast.FunctionDef):
-                                api_docs['functions'].append({
-                                    'name': node.name,
-                                    'file': os.path.relpath(file_path, self.project_root),
-                                    'line': node.lineno,
-                                    'docstring': ast.get_docstring(node) or "无文档",
-                                    'args': [arg.arg for arg in node.args.args]
-                                })
-                            elif isinstance(node, ast.ClassDef):
-                                api_docs['classes'].append({
-                                    'name': node.name,
-                                    'file': os.path.relpath(file_path, self.project_root),
-                                    'line': node.lineno,
-                                    'docstring': ast.get_docstring(node) or "无文档"
-                                })
-                    except:
-                        pass
+            api_docs = {}
+            
+            for file_path in python_files:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # 使用模型分析代码并提取API文档
+                    prompt = f"""
+                    请分析以下Python代码并提取API文档信息：
+                    
+                    文件路径：{file_path}
+                    
+                    代码内容：
+                    {content}
+                    
+                    请提取：
+                    1. 所有公共函数和类
+                    2. 函数/类的用途说明
+                    3. 参数说明
+                    4. 返回值说明
+                    5. 使用示例
+                    
+                    请以结构化的方式组织信息。
+                    """
+                    
+                    api_info = model_client.generate(prompt)
+                    api_docs[file_path] = api_info
+                    
+                except Exception as e:
+                    api_docs[file_path] = f"分析文件时出错: {e}"
+            
+            return api_docs
+            
+        except Exception as e:
+            return {"error": f"提取API文档时出错: {e}"}
+
+    def analyze_project_structure(self) -> str:
+        """分析项目结构"""
+        try:
+            structure = []
+            
+            # 遍历项目目录
+            for root, dirs, files in os.walk(self.project_root):
+                # 跳过隐藏目录和常见的忽略目录
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['__pycache__', 'node_modules']]
+                
+                level = root.replace(self.project_root, '').count(os.sep)
+                indent = '  ' * level
+                structure.append(f"{indent}{os.path.basename(root)}/")
+                
+                # 添加文件
+                subindent = '  ' * (level + 1)
+                for file in files:
+                    if not file.startswith('.'):
+                        structure.append(f"{subindent}{file}")
+            
+            return '\n'.join(structure)
+            
+        except Exception as e:
+            return f"分析项目结构时出错: {e}"
+
+    def generate_technical_documentation(self, doc_type: str, content: str) -> str:
+        """生成技术文档"""
+        model_client = _global_model_client or self.model_client
         
-        return api_docs
+        if not model_client:
+            return "未设置模型客户端，无法生成技术文档"
+        
+        try:
+            prompt = f"""
+            请根据以下信息生成{doc_type}技术文档：
+            
+            内容：
+            {content}
+            
+            请生成专业的技术文档，包含：
+            1. 清晰的标题和结构
+            2. 详细的说明
+            3. 代码示例（如适用）
+            4. 使用指南
+            5. 注意事项
+            
+            请使用Markdown格式。
+            """
+            
+            return model_client.generate(prompt)
+            
+        except Exception as e:
+            return f"生成技术文档时出错: {e}"
 
 def find_all_documents(project_path: str = ".") -> str:
     """查找所有文档文件"""
@@ -285,63 +325,106 @@ def search_in_documents(query: str, project_path: str = ".", case_sensitive: boo
         return f"❌ 搜索文档时出错: {e}"
 
 def generate_project_readme(project_path: str = ".") -> str:
-    """生成项目README"""
-    try:
-        doc_manager = DocumentManager(project_path)
-        readme_content = doc_manager.generate_project_readme()
-        
-        # 保存到文件
-        readme_path = os.path.join(project_path, "README_generated.md")
-        with open(readme_path, 'w', encoding='utf-8') as f:
-            f.write(readme_content)
-        
-        result = f"📝 项目README已生成\n"
-        result += f"{'='*50}\n\n"
-        result += f"📄 文件路径: {readme_path}\n"
-        result += f"📏 内容长度: {len(readme_content)} 字符\n\n"
-        result += "📋 README内容预览:\n"
-        result += "```markdown\n"
-        result += readme_content[:500] + "...\n"
-        result += "```\n"
-        
-        return result
-        
-    except Exception as e:
-        return f"❌ 生成README时出错: {e}"
+    """生成项目README文档"""
+    manager = DocumentManager(project_path)
+    
+    # 使用全局模型客户端
+    model_client = get_model_client()
+    if model_client:
+        manager.set_model_client(model_client)
+    
+    return manager.generate_project_readme()
 
 def extract_api_documentation(project_path: str = ".") -> str:
     """提取API文档"""
+    manager = DocumentManager(project_path)
+    
+    # 使用全局模型客户端
+    model_client = get_model_client()
+    if model_client:
+        manager.set_model_client(model_client)
+    
+    result = manager.extract_api_documentation()
+    
+    if "error" in result:
+        return result["error"]
+    
+    # 格式化输出
+    formatted_result = "API文档提取结果:\n\n"
+    for file_path, api_info in result.items():
+        formatted_result += f"文件: {file_path}\n"
+        formatted_result += f"API信息:\n{api_info}\n\n"
+        formatted_result += "=" * 50 + "\n\n"
+    
+    return formatted_result
+
+def generate_technical_doc(doc_type: str, content: str, project_path: str = ".") -> str:
+    """生成技术文档"""
+    manager = DocumentManager(project_path)
+    
+    # 使用全局模型客户端
+    model_client = get_model_client()
+    if model_client:
+        manager.set_model_client(model_client)
+    
+    return manager.generate_technical_documentation(doc_type, content)
+
+def analyze_project_architecture(project_path: str = ".") -> str:
+    """分析项目架构"""
+    manager = DocumentManager(project_path)
+    
+    # 使用全局模型客户端
+    model_client = get_model_client()
+    if model_client:
+        manager.set_model_client(model_client)
+    
+    if not model_client:
+        return "未设置模型客户端，无法分析项目架构"
+    
     try:
-        doc_manager = DocumentManager(project_path)
-        api_docs = doc_manager.extract_api_documentation()
+        # 获取项目结构
+        structure = manager.analyze_project_structure()
         
-        result = f"📖 API文档提取\n"
-        result += f"{'='*50}\n\n"
+        # 查找配置文件
+        config_files = []
+        for root, dirs, files in os.walk(project_path):
+            for file in files:
+                if file in ['package.json', 'requirements.txt', 'setup.py', 'Dockerfile', 'docker-compose.yml', 'config.yaml']:
+                    config_files.append(os.path.join(root, file))
         
-        # 函数统计
-        result += f"🔧 函数: {len(api_docs['functions'])} 个\n"
-        result += f"📦 类: {len(api_docs['classes'])} 个\n\n"
+        config_content = ""
+        for config_file in config_files:
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    config_content += f"\n{config_file}:\n{content}\n"
+            except:
+                pass
         
-        # 函数列表
-        if api_docs['functions']:
-            result += "🔧 函数列表:\n"
-            for func in api_docs['functions']:
-                result += f"  • {func['name']}({', '.join(func['args'])})\n"
-                result += f"    文件: {func['file']}:{func['line']}\n"
-                result += f"    说明: {func['docstring'][:100]}...\n\n"
+        # 使用模型分析架构
+        prompt = f"""
+        请分析以下项目的架构和技术栈：
         
-        # 类列表
-        if api_docs['classes']:
-            result += "📦 类列表:\n"
-            for cls in api_docs['classes']:
-                result += f"  • {cls['name']}\n"
-                result += f"    文件: {cls['file']}:{cls['line']}\n"
-                result += f"    说明: {cls['docstring'][:100]}...\n\n"
+        项目结构：
+        {structure}
         
-        return result
+        配置文件内容：
+        {config_content}
+        
+        请提供：
+        1. 项目类型和主要技术栈
+        2. 架构模式分析
+        3. 模块依赖关系
+        4. 部署方式
+        5. 潜在的改进建议
+        
+        请详细分析并提供专业的技术见解。
+        """
+        
+        return model_client.generate(prompt)
         
     except Exception as e:
-        return f"❌ 提取API文档时出错: {e}"
+        return f"分析项目架构时出错: {e}"
 
 def search_code_patterns(pattern: str, project_path: str = ".") -> str:
     """搜索代码模式"""

@@ -153,6 +153,23 @@ class Agent:
         }
         # 任务执行历史（用于复盘功能）
         self.execution_history = []
+        
+        # 获取主模型客户端，用于规划阶段
+        self.primary_model_client = self._get_primary_model_client()
+
+    def _get_primary_model_client(self):
+        """获取主模型客户端"""
+        # 从配置中获取主模型
+        primary_model = self.model_router.config.get('models', {}).get('primary')
+        if primary_model:
+            return self.model_router.get_model_client(primary_model)
+        
+        # 如果没有配置主模型，返回第一个可用模型
+        available_models = list(self.model_router.model_clients.keys())
+        if available_models:
+            return self.model_router.get_model_client(available_models[0])
+        
+        return None
 
     def _update_session_memory(self, plan: List[Dict[str, Any]], results: List[Dict[str, Any]]):
         """更新会话记忆"""
@@ -230,26 +247,15 @@ class Agent:
             # 使用现代化UI显示规划尝试
             ui.print_planning_attempt(p_attempt + 1, max_planning_attempts)
             
-            # 智能模型路由 - 根据任务选择最合适的模型
-            task_context = {
-                "created_files": self.session_memory["created_files"],
-                "visited_directories": self.session_memory["visited_directories"]
-            }
+            # 规划阶段：固定使用主模型进行整体思考规划
+            ui.print_info(f"🧠 规划阶段: 使用主模型进行整体思考规划")
             
-            selected_model = self.model_router.route_task(goal, task_context)
-            routing_info = self.model_router.get_routing_info(goal)
-            
-            # 显示模型路由信息
-            ui.print_info(f"🧠 选择模型: {selected_model} ({routing_info['rule_description']})")
-            
-            # 获取选定的模型客户端
-            model_client = self.model_router.get_model_client(selected_model)
-            if not model_client:
-                ui.print_error(f"无法获取模型客户端: {selected_model}")
-                continue
-            
-            # 更新规划器使用的模型
-            self.planner.model_client = model_client
+            # 确保规划器使用主模型
+            if self.primary_model_client:
+                self.planner.model_client = self.primary_model_client
+            else:
+                ui.print_error("无法获取主模型客户端")
+                return False
             
             # 生成智能化的规划提示
             planning_prompt = self._generate_context_prompt(goal)
@@ -275,8 +281,8 @@ class Agent:
                 # 使用现代化UI显示执行开始
                 ui.print_execution_header()
                 
-                # 执行计划并使用新UI显示进度
-                execution_results = self._execute_plan_with_ui(current_plan)
+                # 执行计划并使用新UI显示进度，传入目标用于智能模型选择
+                execution_results = self._execute_plan_with_ui(current_plan, goal)
                 
                 # 更新会话记忆
                 self._update_session_memory(current_plan, execution_results)
@@ -311,8 +317,8 @@ class Agent:
             self._record_task_to_history(goal, current_plan, final_results, False)
         return False
 
-    def _execute_plan_with_ui(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """使用现代UI执行计划"""
+    def _execute_plan_with_ui(self, plan: List[Dict[str, Any]], goal: str) -> List[Dict[str, Any]]:
+        """使用现代UI执行计划，并为每个步骤选择最合适的专业模型"""
         results = []
         total_steps = len(plan)
         
@@ -323,6 +329,10 @@ class Agent:
             
             # 显示步骤开始
             ui.print_step_execution(step_num, total_steps, tool_name, "running")
+            
+            # 为当前步骤选择最合适的专业模型
+            selected_model = self._select_model_for_step(task, goal)
+            ui.print_info(f"  🤖 执行模型: {selected_model}")
             
             # 处理占位符
             try:
@@ -348,62 +358,129 @@ class Agent:
                 ui.print_step_execution(step_num, total_steps, tool_name, "failed")
                 continue
             
-            # 执行工具
-            result = {
-                "step": task.get('step', step_num),
-                "tool": tool_name,
-                "arguments": processed_arguments,
-                "status": "failed",
-                "output": "",
-                "error": ""
-            }
+            # 执行工具，传入选定的模型客户端
+            selected_model_client = self.model_router.get_model_client(selected_model)
+            result = self._execute_single_step(task, processed_arguments, step_num, selected_model_client)
             
-            if tool_name in self.executor.tools:
-                try:
-                    tool_function = self.executor.tools[tool_name]
-                    
-                    # 验证参数
-                    if tool_name in self.executor.tool_info:
-                        expected_params = [p["name"] for p in self.executor.tool_info[tool_name]["parameters"]]
-                        provided_params = list(processed_arguments.keys())
-                        invalid_params = [p for p in provided_params if p not in expected_params]
-                        
-                        if invalid_params:
-                            error_message = f"工具 {tool_name} 收到无效参数: {invalid_params}。期望参数: {expected_params}"
-                            ui.print_step_result(error_message, is_error=True)
-                            result['error'] = error_message
-                            results.append(result)
-                            ui.print_step_execution(step_num, total_steps, tool_name, "failed")
-                            continue
-                    
-                    # 调用工具
-                    output = tool_function(**processed_arguments)
-                    
-                    # 检查是否为错误输出
-                    if isinstance(output, str) and ("出错" in output or "错误" in output or "Error" in output):
-                        ui.print_step_result(output, is_error=True)
-                        result['error'] = output
-                        ui.print_step_execution(step_num, total_steps, tool_name, "failed")
-                    else:
-                        result['status'] = 'completed'
-                        result['output'] = output
-                        ui.print_step_result(str(output))
-                        ui.print_step_execution(step_num, total_steps, tool_name, "success")
-                    
-                except Exception as e:
-                    error_message = f"执行工具 {tool_name} 时出错: {e}"
-                    ui.print_step_result(error_message, is_error=True)
-                    result['error'] = error_message
-                    ui.print_step_execution(step_num, total_steps, tool_name, "failed")
+            # 显示执行结果
+            if result['status'] == 'completed':
+                ui.print_step_result(str(result['output']))
+                ui.print_step_execution(step_num, total_steps, tool_name, "success")
             else:
-                error_message = f"未找到工具 '{tool_name}'"
-                ui.print_step_result(error_message, is_error=True)
-                result['error'] = error_message
+                ui.print_step_result(result['error'], is_error=True)
                 ui.print_step_execution(step_num, total_steps, tool_name, "failed")
             
             results.append(result)
         
         return results
+
+    def _select_model_for_step(self, task: Dict[str, Any], goal: str) -> str:
+        """为特定步骤选择最合适的专业模型"""
+        tool_name = task.get("tool")
+        arguments = task.get("arguments", {})
+        
+        # 构建步骤描述用于模型选择
+        step_description = f"执行工具 {tool_name}"
+        
+        # 根据工具类型和参数增强描述
+        if tool_name in ["integrate_content", "summarize_content", "extract_information"]:
+            step_description += " - 内容处理和整合任务"
+        elif tool_name in ["analyze_image", "describe_image", "identify_objects_in_image"]:
+            step_description += " - 图像分析和视觉任务"
+        elif tool_name in ["analyze_code_quality", "find_security_issues", "analyze_project_structure"]:
+            step_description += " - 代码分析和编程任务"
+        elif tool_name in ["web_search", "search_news", "search_academic"]:
+            step_description += " - 网络搜索和信息检索任务"
+        elif tool_name in ["generate_project_readme", "extract_api_documentation"]:
+            step_description += " - 文档生成和技术写作任务"
+        
+        # 检查参数中是否包含图像路径
+        task_context = {"file_paths": []}
+        for key, value in arguments.items():
+            if isinstance(value, str) and any(ext in value.lower() for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']):
+                task_context["file_paths"].append(value)
+        
+        # 使用模型路由器选择专业模型
+        return self.model_router.route_task(step_description, task_context)
+
+    def _execute_single_step(self, task: Dict[str, Any], processed_arguments: Dict[str, Any], step_num: int, model_client) -> Dict[str, Any]:
+        """执行单个步骤，使用指定的模型客户端"""
+        tool_name = task.get("tool")
+        
+        result = {
+            "step": task.get('step', step_num),
+            "tool": tool_name,
+            "arguments": processed_arguments,
+            "status": "failed",
+            "output": "",
+            "error": ""
+        }
+        
+        if tool_name in self.executor.tools:
+            try:
+                tool_function = self.executor.tools[tool_name]
+                
+                # 验证参数
+                if tool_name in self.executor.tool_info:
+                    expected_params = [p["name"] for p in self.executor.tool_info[tool_name]["parameters"]]
+                    provided_params = list(processed_arguments.keys())
+                    invalid_params = [p for p in provided_params if p not in expected_params]
+                    
+                    if invalid_params:
+                        error_message = f"工具 {tool_name} 收到无效参数: {invalid_params}。期望参数: {expected_params}"
+                        result['error'] = error_message
+                        return result
+                
+                # 对于需要模型客户端的工具，传入选定的模型客户端
+                if self._tool_needs_model_client(tool_name):
+                    # 临时设置模型客户端
+                    self._set_tool_model_client(tool_name, model_client)
+                
+                # 调用工具
+                output = tool_function(**processed_arguments)
+                
+                # 检查是否为错误输出
+                if isinstance(output, str) and ("出错" in output or "错误" in output or "Error" in output):
+                    result['error'] = output
+                else:
+                    result['status'] = 'completed'
+                    result['output'] = output
+                    
+            except Exception as e:
+                error_message = f"执行工具 {tool_name} 时出错: {e}"
+                result['error'] = error_message
+        else:
+            error_message = f"未找到工具 '{tool_name}'"
+            result['error'] = error_message
+        
+        return result
+
+    def _tool_needs_model_client(self, tool_name: str) -> bool:
+        """检查工具是否需要模型客户端"""
+        model_dependent_tools = [
+            "integrate_content", "summarize_content", "extract_information", 
+            "transform_format", "analyze_image", "describe_image", 
+            "identify_objects_in_image", "extract_text_from_image",
+            "generate_project_readme", "extract_api_documentation"
+        ]
+        return tool_name in model_dependent_tools
+
+    def _set_tool_model_client(self, tool_name: str, model_client):
+        """为特定工具设置模型客户端"""
+        if tool_name in ["integrate_content", "summarize_content", "extract_information", "transform_format"]:
+            # 设置内容整合工具的模型客户端
+            try:
+                from .tools.content_integrator import set_model_client
+                set_model_client(model_client)
+            except ImportError:
+                pass
+        elif tool_name in ["analyze_image", "describe_image", "identify_objects_in_image", "extract_text_from_image"]:
+            # 设置图像处理工具的模型客户端
+            try:
+                from .tools.image_processor import set_model_client
+                set_model_client(model_client)
+            except ImportError:
+                pass
 
     def _is_duplicate_plan(self, new_plan: List[Dict[str, Any]]) -> bool:
         """检查新计划是否与之前的计划重复"""
@@ -688,6 +765,23 @@ def models(ctx: typer.Context):
     for alias, info in models_info.items():
         capabilities = ", ".join(info["capabilities"])
         ui.print_info(f"• {alias}: {info['model_name']} ({info['provider']}) - {capabilities}")
+    
+    # 验证配置并显示警告
+    validation_result = model_router.validate_routing_rules()
+    
+    if validation_result.get("warnings"):
+        ui.print_info("")
+        ui.print_warning("⚠️ 配置建议:")
+        for warning in validation_result["warnings"]:
+            ui.print_info(f"  - {warning}")
+        ui.print_info("")
+        ui.print_info("💡 可以使用 'intellicli config-wizard' 重新配置模型")
+    
+    if not validation_result.get("valid"):
+        ui.print_info("")
+        ui.print_error("❌ 配置问题:")
+        for issue in validation_result.get("issues", []):
+            ui.print_info(f"  - {issue}")
 
 @app.command()
 def config():

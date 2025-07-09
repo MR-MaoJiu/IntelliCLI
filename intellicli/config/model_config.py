@@ -264,6 +264,10 @@ class ModelConfigManager:
         capabilities = self._configure_capabilities(provider)
         model_config["capabilities"] = capabilities
         
+        # 模型优先级配置
+        priority = self._configure_model_priority()
+        model_config["priority"] = priority
+        
         return model_config
     
     def _configure_capabilities(self, provider: str) -> List[str]:
@@ -294,6 +298,30 @@ class ModelConfigManager:
                     ui.print_error(f"请输入 1-{len(supported)} 之间的数字")
             except ValueError:
                 ui.print_error("请输入有效的数字或 'all'")
+    
+    def _configure_model_priority(self) -> int:
+        """配置模型优先级"""
+        ui.print_info("")
+        ui.print_info("⚖️ 设置模型优先级:")
+        ui.print_info("   优先级用于在多个模型都满足任务需求时决定选择顺序")
+        ui.print_info("   数值越高优先级越高，建议范围: 1-100")
+        ui.print_info("   默认优先级: 50")
+        ui.print_info("")
+        
+        while True:
+            priority_input = ui.get_user_input("模型优先级 (1-100, 默认: 50)")
+            
+            if not priority_input:
+                return 50
+            
+            try:
+                priority = int(priority_input)
+                if 1 <= priority <= 100:
+                    return priority
+                else:
+                    ui.print_error("优先级必须在 1-100 之间")
+            except ValueError:
+                ui.print_error("请输入有效的数字")
     
     def _select_primary_model(self, models: List[Dict[str, Any]]) -> str:
         """选择主模型"""
@@ -619,6 +647,20 @@ class ModelConfigManager:
                 ui.print_error(f"{provider_type} 模型配置缺少必需字段: {field}")
                 return False
         
+        # 验证可选的优先级字段
+        if 'priority' in provider:
+            priority = provider['priority']
+            if not isinstance(priority, int) or not (1 <= priority <= 100):
+                ui.print_error(f"模型 {provider.get('alias', '未知')} 的优先级必须是 1-100 之间的整数")
+                return False
+        
+        # 验证能力字段
+        if 'capabilities' in provider:
+            capabilities = provider['capabilities']
+            if not isinstance(capabilities, list):
+                ui.print_error(f"模型 {provider.get('alias', '未知')} 的能力字段必须是列表")
+                return False
+        
         return True
     
     def show_current_config(self):
@@ -643,11 +685,13 @@ class ModelConfigManager:
                     provider_type = provider.get('provider', '未知')
                     model_name = provider.get('model_name', '未知')
                     capabilities = provider.get('capabilities', [])
+                    priority = provider.get('priority', 50)
                     
                     ui.print_info(f"🤖 {alias}")
                     ui.print_info(f"   供应商: {provider_type}")
                     ui.print_info(f"   模型: {model_name}")
                     ui.print_info(f"   能力: {', '.join(capabilities)}")
+                    ui.print_info(f"   优先级: {priority}")
                     
                     if provider_type == 'ollama' and 'base_url' in provider:
                         ui.print_info(f"   服务器: {provider['base_url']}")
