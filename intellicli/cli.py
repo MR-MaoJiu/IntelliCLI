@@ -449,7 +449,28 @@ class Agent:
             except Exception as e:
                 error_message = f"执行工具 {tool_name} 时出错: {e}"
                 result['error'] = error_message
+        # 检查是否是 MCP 工具
+        elif self.executor.mcp_manager and self.executor.mcp_manager.is_mcp_tool(tool_name):
+            try:
+                print(f"  \\_ 调用 MCP 工具: {tool_name}")
+                
+                # 调用 MCP 工具
+                output = self.executor.mcp_manager.call_tool(tool_name, processed_arguments)
+                
+                result['status'] = 'completed'
+                result['output'] = output
+                
+            except Exception as e:
+                error_message = f"执行 MCP 工具 {tool_name} 时出错: {e}"
+                result['error'] = error_message
         else:
+            # 添加调试信息
+            available_builtin_tools = list(self.executor.tools.keys())
+            available_mcp_tools = []
+            if self.executor.mcp_manager:
+                available_mcp_tools = list(self.executor.mcp_manager.all_tools.keys())
+                print(f"  \\_ 调试: 可用 MCP 工具: {available_mcp_tools}")
+            
             error_message = f"未找到工具 '{tool_name}'"
             result['error'] = error_message
         
@@ -823,6 +844,161 @@ def config_reset():
         ui.print_error(f"重置配置时出错: {e}")
         raise typer.Exit(code=1)
 
+@app.command(name="config-edit")
+def config_edit():
+    """直接编辑配置文件"""
+    import subprocess
+    import platform
+    
+    config_path = "config.yaml"
+    
+    try:
+        # 检查配置文件是否存在
+        if not os.path.exists(config_path):
+            ui.print_warning("⚠️ 配置文件不存在，正在创建示例配置文件...")
+            
+            # 创建示例配置文件
+            example_config = {
+                "logging": {"level": "INFO"},
+                "models": {
+                    "primary": "your_model_alias",
+                    "providers": [
+                        {
+                            "alias": "your_model_alias",
+                            "provider": "deepseek",  # 或 openai, claude, gemini, ollama
+                            "model_name": "deepseek-chat",
+                            "api_key": "your_api_key_here",
+                            "capabilities": ["general", "code", "reasoning"],
+                            "priority": 50
+                        }
+                    ]
+                },
+                "search_engines": {
+                    "engines": {
+                        "duckduckgo": {"enabled": True, "default": True},
+                        "searx": {"enabled": True}
+                    }
+                },
+                "mcp_servers": {
+                    "servers": []
+                },
+                "task_review": {
+                    "enabled": False,
+                    "auto_review": False,
+                    "review_threshold": 0.8,
+                    "max_iterations": 3
+                },
+                "tools": {
+                    "file_system": {"enabled": True},
+                    "shell": {"enabled": True},
+                    "system_operations": {"enabled": True},
+                    "python_analyzer": {"enabled": True},
+                    "web_search": {"enabled": True}
+                }
+            }
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(example_config, f, default_flow_style=False, allow_unicode=True, indent=2)
+            
+            ui.print_success(f"✅ 已创建示例配置文件: {config_path}")
+        
+        # 获取系统信息并选择合适的编辑器
+        system = platform.system().lower()
+        
+        # 尝试不同的编辑器，按优先级排序
+        editors_to_try = []
+        
+        if system == "darwin":  # macOS
+            editors_to_try = [
+                ["open", "-t"],  # 默认文本编辑器
+                ["code", "--wait"],  # VS Code
+                ["cursor", "--wait"],  # Cursor
+                ["nano"],
+                ["vim"]
+            ]
+        elif system == "windows":  # Windows
+            editors_to_try = [
+                ["notepad"],  # 记事本
+                ["code", "--wait"],  # VS Code
+                ["cursor", "--wait"],  # Cursor
+                ["nano"],
+                ["vim"]
+            ]
+        else:  # Linux and others
+            editors_to_try = [
+                ["code", "--wait"],  # VS Code
+                ["cursor", "--wait"],  # Cursor
+                ["gedit"],  # GNOME 文本编辑器
+                ["kate"],  # KDE 文本编辑器
+                ["nano"],
+                ["vim"]
+            ]
+        
+        ui.print_info(f"🔧 正在打开配置文件进行编辑: {config_path}")
+        ui.print_info("💡 提示：")
+        ui.print_info("   - 编辑完成后保存并关闭编辑器")
+        ui.print_info("   - 配置文件使用 YAML 格式")
+        ui.print_info("   - 注意保持正确的缩进（使用空格，不要使用制表符）")
+        ui.print_info("   - 修改后请运行 'intellicli config' 验证配置")
+        ui.print_info("")
+        
+        editor_found = False
+        
+        for editor_cmd in editors_to_try:
+            try:
+                # 检查编辑器是否可用
+                if system == "windows" and editor_cmd[0] == "notepad":
+                    # Windows 记事本特殊处理
+                    subprocess.run([editor_cmd[0], config_path], check=True)
+                elif system == "darwin" and editor_cmd[0] == "open":
+                    # macOS open 命令特殊处理
+                    subprocess.run(editor_cmd + [config_path], check=True)
+                else:
+                    # 检查命令是否存在
+                    subprocess.run(["which", editor_cmd[0]], 
+                                 capture_output=True, check=True)
+                    
+                    # 启动编辑器
+                    subprocess.run(editor_cmd + [config_path], check=True)
+                
+                editor_found = True
+                break
+                
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        
+        if not editor_found:
+            # 如果没有找到图形编辑器，给出手动编辑提示
+            ui.print_warning("⚠️ 未找到可用的编辑器")
+            ui.print_info("📝 您可以手动编辑配置文件:")
+            ui.print_info(f"   文件路径: {os.path.abspath(config_path)}")
+            ui.print_info("")
+            ui.print_info("🔧 或者安装以下编辑器之一:")
+            if system == "darwin":
+                ui.print_info("   - VS Code: https://code.visualstudio.com/")
+                ui.print_info("   - Cursor: https://cursor.sh/")
+            elif system == "windows": 
+                ui.print_info("   - VS Code: https://code.visualstudio.com/")
+                ui.print_info("   - Cursor: https://cursor.sh/")
+                ui.print_info("   - 或使用记事本编辑")
+            else:
+                ui.print_info("   - VS Code: https://code.visualstudio.com/")
+                ui.print_info("   - Cursor: https://cursor.sh/")
+                ui.print_info("   - 或安装: sudo apt install gedit (Ubuntu)")
+            return
+        
+        ui.print_success("✅ 配置文件编辑完成！")
+        ui.print_info("")
+        ui.print_info("🔍 验证配置文件:")
+        ui.print_info("   运行: intellicli config")
+        ui.print_info("")
+        ui.print_info("🚀 重新启动 IntelliCLI 以应用新配置")
+        
+    except Exception as e:
+        ui.print_error(f"打开配置文件时出错: {e}")
+        ui.print_info(f"📝 您可以手动编辑配置文件: {os.path.abspath(config_path)}")
+        raise typer.Exit(code=1)
+
 @app.command(name="review-config")
 def review_config():
     """配置复盘功能"""
@@ -979,6 +1155,175 @@ def search_health():
         
     except Exception as e:
         print(f"❌ 获取健康状态报告时出错: {e}")
+
+@app.command(name="mcp-config")
+def mcp_config():
+    """配置 MCP (Model Context Protocol) 服务器"""
+    try:
+        config_manager = ModelConfigManager()
+        success = config_manager.configure_mcp_only()
+        if not success:
+            raise typer.Exit(code=1)
+    except Exception as e:
+        ui.print_error(f"配置 MCP 服务器时出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command(name="mcp-status")
+def mcp_status(ctx: typer.Context):
+    """显示 MCP 服务器状态"""
+    try:
+        executor = ctx.obj["executor"]
+        mcp_status = executor.get_mcp_status()
+        
+        ui.print_section_header("MCP 服务器状态", "🔧")
+        
+        if not mcp_status:
+            ui.print_info("❌ MCP 功能未启用或未配置任何服务器")
+            ui.print_info("💡 使用 'intellicli mcp-config' 配置 MCP 服务器")
+            return
+        
+        statistics = mcp_status.get('statistics', {})
+        server_status = mcp_status.get('server_status', {})
+        
+        # 显示统计信息
+        ui.print_info("📊 统计信息:")
+        ui.print_info(f"   服务器总数: {statistics.get('total_servers', 0)}")
+        ui.print_info(f"   已连接服务器: {statistics.get('connected_servers', 0)}")
+        ui.print_info(f"   可用工具总数: {statistics.get('total_tools', 0)}")
+        ui.print_info(f"   健康检查状态: {'运行中' if statistics.get('health_check_running', False) else '已停止'}")
+        ui.print_info("")
+        
+        # 显示各服务器详细状态
+        if server_status:
+            ui.print_info("🔗 服务器详细状态:")
+            for server_name, status in server_status.items():
+                connected = status.get('connected', False)
+                tools_count = status.get('tools_count', 0)
+                description = status.get('description', '')
+                last_check = status.get('last_check')
+                error = status.get('error')
+                
+                status_icon = "✅" if connected else "❌"
+                ui.print_info(f"   {status_icon} {server_name}: {description}")
+                ui.print_info(f"      状态: {'已连接' if connected else '断开连接'}")
+                ui.print_info(f"      工具数量: {tools_count}")
+                if last_check:
+                    ui.print_info(f"      最后检查: {last_check}")
+                if error:
+                    ui.print_info(f"      错误: {error}")
+                ui.print_info("")
+        
+        # 显示工具分布
+        tools_by_server = statistics.get('tools_by_server', {})
+        if tools_by_server:
+            ui.print_info("🛠️ 工具分布:")
+            for server, count in tools_by_server.items():
+                ui.print_info(f"   {server}: {count} 个工具")
+        
+        ui.print_info("")
+        ui.print_info("💡 提示:")
+        ui.print_info("   - 使用 'intellicli mcp-config' 配置新的 MCP 服务器")
+        ui.print_info("   - 使用 'intellicli task' 命令可以调用 MCP 工具")
+        
+    except Exception as e:
+        ui.print_error(f"获取 MCP 状态时出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command(name="mcp-refresh")
+def mcp_refresh(ctx: typer.Context):
+    """刷新 MCP 工具列表"""
+    try:
+        executor = ctx.obj["executor"]
+        
+        ui.print_info("🔄 正在刷新 MCP 工具列表...")
+        executor.refresh_mcp_tools()
+        ui.print_success("✅ MCP 工具列表已刷新")
+        
+        # 显示更新后的状态
+        mcp_status = executor.get_mcp_status()
+        if mcp_status:
+            statistics = mcp_status.get('statistics', {})
+            ui.print_info(f"📊 当前工具总数: {statistics.get('total_tools', 0)}")
+        
+    except Exception as e:
+        ui.print_error(f"刷新 MCP 工具时出错: {e}")
+        raise typer.Exit(code=1)
+
+@app.command(name="mcp-tools")
+def mcp_tools(ctx: typer.Context):
+    """显示所有可用的 MCP 工具"""
+    try:
+        executor = ctx.obj["executor"]
+        
+        ui.print_section_header("可用的 MCP 工具", "🛠️")
+        
+        # 获取所有工具信息
+        all_tools = executor.get_tool_info()
+        
+        # 分离内置工具和 MCP 工具
+        builtin_tools = []
+        mcp_tools = []
+        
+        for tool in all_tools:
+            if tool.get('is_mcp_tool', False):
+                mcp_tools.append(tool)
+            else:
+                builtin_tools.append(tool)
+        
+        if not mcp_tools:
+            ui.print_warning("❌ 当前没有可用的 MCP 工具")
+            ui.print_info("💡 使用 'intellicli mcp-config' 配置 MCP 服务器")
+            return
+        
+        # 按服务器分组显示 MCP 工具
+        tools_by_server = {}
+        for tool in mcp_tools:
+            server_name = tool.get('server_name', 'unknown')
+            if server_name not in tools_by_server:
+                tools_by_server[server_name] = []
+            tools_by_server[server_name].append(tool)
+        
+        for server_name, tools in tools_by_server.items():
+            ui.print_info(f"\n📡 服务器: {server_name}")
+            ui.print_info(f"   工具数量: {len(tools)}")
+            
+            for tool in tools:
+                tool_name = tool.get('name', 'unknown')
+                description = tool.get('description', '无描述')
+                # 清理描述中的服务器前缀
+                if description.startswith(f"[MCP:{server_name}] "):
+                    description = description[len(f"[MCP:{server_name}] "):]
+                
+                ui.print_info(f"   • {tool_name}: {description}")
+                
+                # 显示参数信息
+                parameters = tool.get('parameters', [])
+                if parameters:
+                    required_params = [p for p in parameters if p.get('required', False)]
+                    optional_params = [p for p in parameters if not p.get('required', False)]
+                    
+                    if required_params:
+                        param_names = [p['name'] for p in required_params]
+                        ui.print_info(f"     必需参数: {', '.join(param_names)}")
+                    
+                    if optional_params:
+                        param_names = [p['name'] for p in optional_params]
+                        ui.print_info(f"     可选参数: {', '.join(param_names)}")
+        
+        # 显示内置工具数量对比
+        ui.print_info(f"\n📊 工具统计:")
+        ui.print_info(f"   内置工具: {len(builtin_tools)} 个")
+        ui.print_info(f"   MCP 工具: {len(mcp_tools)} 个")
+        ui.print_info(f"   总计: {len(all_tools)} 个")
+        
+        ui.print_info("\n💡 提示:")
+        ui.print_info("   - 使用 'intellicli task \"<任务描述>\"' 来执行任务")
+        ui.print_info("   - AI 会自动选择合适的工具来完成任务")
+        ui.print_info("   - 可以在任务描述中明确指定使用某个工具")
+        
+    except Exception as e:
+        ui.print_error(f"获取 MCP 工具列表时出错: {e}")
+        raise typer.Exit(code=1)
 
 @app.command()
 def review(

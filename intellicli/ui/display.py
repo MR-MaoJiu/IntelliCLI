@@ -432,79 +432,85 @@ class ModernUI:
     
     def print_help(self):
         """显示帮助信息"""
-        help_text = [
-            "",
-            f"{Colors.BRIGHT_WHITE}📚 IntelliCLI 帮助信息{Colors.RESET}",
-            "",
-            "🔤 基本命令:",
-            f"   • {Colors.BRIGHT_YELLOW}help{Colors.RESET} - 显示此帮助信息",
-            f"   • {Colors.BRIGHT_YELLOW}exit{Colors.RESET} - 退出 IntelliCLI",
-            f"   • {Colors.BRIGHT_YELLOW}clear{Colors.RESET} - 清空会话记忆",
-            f"   • {Colors.BRIGHT_YELLOW}models{Colors.RESET} - 显示可用模型信息",
-            "",
-            "🔍 搜索功能:",
-            f"   • {Colors.BRIGHT_CYAN}search-config{Colors.RESET} - 配置搜索引擎",
-            f"   • {Colors.BRIGHT_CYAN}search-status{Colors.RESET} - 查看搜索引擎状态",
-            f"   • {Colors.BRIGHT_CYAN}search-test{Colors.RESET} - 测试搜索功能",
-            f"   • {Colors.BRIGHT_CYAN}search-health{Colors.RESET} - 查看搜索引擎健康状态",
-            "",
-            "🔍 复盘功能:",
-            f"   • {Colors.BRIGHT_MAGENTA}review{Colors.RESET} - 对任务执行结果进行复盘分析",
-            f"   • {Colors.BRIGHT_MAGENTA}history{Colors.RESET} - 显示任务执行历史",
-            f"   • {Colors.BRIGHT_MAGENTA}task --review{Colors.RESET} - 执行任务并启用复盘",
-            "",
-            "⌨️  高级输入功能:",
-            f"   • {Colors.BRIGHT_GREEN}方向键{Colors.RESET} - 左右移动光标，上下浏览历史",
-            f"   • {Colors.BRIGHT_GREEN}Tab{Colors.RESET} - 自动补全常用词汇",
-            f"   • {Colors.BRIGHT_GREEN}Ctrl+A{Colors.RESET} - 移到行首",
-            f"   • {Colors.BRIGHT_GREEN}Ctrl+E{Colors.RESET} - 移到行末",
-            f"   • {Colors.BRIGHT_GREEN}Ctrl+K{Colors.RESET} - 删除光标到行末",
-            f"   • {Colors.BRIGHT_GREEN}Ctrl+U{Colors.RESET} - 删除光标到行首",
-            f"   • {Colors.BRIGHT_GREEN}Ctrl+W{Colors.RESET} - 删除前一个单词",
-            f"   • {Colors.BRIGHT_GREEN}Ctrl+R{Colors.RESET} - 搜索历史记录",
-            f"   • {Colors.DIM}支持正确的中文字符编辑{Colors.RESET}",
-            "",
-            "🧠 智能模型路由:",
-            "   • 系统会根据任务类型自动选择最合适的模型",
-            "   • 🖼️  图像任务 → 视觉模型 (LLaVA, Gemini Vision)",
-            "   • 💻 代码任务 → 代码模型 (Gemini, Gemma)",
-            "   • 🤔 推理任务 → 推理模型 (Gemini, Gemma)",
-            "   • 💬 一般任务 → 通用模型 (Gemma, Gemini)",
-            "",
-            "🌐 联网搜索:",
-            "   • 支持多种搜索引擎：DuckDuckGo, Google, Bing, SearX",
-            "   • 免费引擎：DuckDuckGo 和 SearX 开箱即用",
-            "   • 商业引擎：Google 和 Bing 需要配置 API 密钥",
-            "   • 在任务中提及搜索相关需求会自动使用搜索功能",
-            "",
-            "💡 使用技巧:",
-            "   • 直接描述您想完成的任务",
-            "   • 支持文件操作、代码分析、系统命令等",
-            "   • AI 会自动规划多个步骤来完成复杂任务",
-            "   • 具备上下文记忆，可以理解连续的任务",
-            "   • 涉及图像的任务会自动使用视觉模型",
-            "   • 需要网络搜索的任务会自动使用搜索引擎",
-            "   • 启用复盘功能可以自动分析任务结果并改进",
-            "",
-            "🎯 示例任务:",
-            "   • 创建一个简单的网页",
-            "   • 分析Python代码的第一个函数",
-            "   • 列出当前目录的文件",
-            "   • 运行刚创建的HTML文件",
-            "   • 识别截图中的内容 (自动使用视觉模型)",
-            "   • 编写复杂的算法 (自动使用代码模型)",
-            "   • 搜索最新的Python开发资讯 (自动使用搜索引擎)",
-            "",
-            "🔍 复盘功能示例:",
-            "   • intellicli task '创建网页' --review (执行任务并复盘)",
-            "   • intellicli review --goal '创建网页' (手动复盘指定任务)",
-            "   • intellicli review --auto-fix (复盘并自动修复问题)",
-            "   • intellicli history (查看任务执行历史)",
-            ""
-        ]
-        
-        for line in help_text:
-            self._print(line)
+        help_text = f"""
+{self._colorize("📖 IntelliCLI 帮助", Colors.BRIGHT_CYAN)}
+{self._colorize("=" * 50, Colors.CYAN)}
+
+{self._colorize("🚀 基本命令:", Colors.BRIGHT_YELLOW)}
+  {self._colorize("task <描述>", Colors.WHITE)}         - 执行复杂任务
+  {self._colorize("chat <问题>", Colors.WHITE)}         - 与AI聊天
+  {self._colorize("session", Colors.WHITE)}             - 启动交互会话
+
+{self._colorize("⚙️  配置命令:", Colors.BRIGHT_YELLOW)}
+  {self._colorize("config", Colors.WHITE)}              - 显示当前配置
+  {self._colorize("config-wizard", Colors.WHITE)}       - 运行配置向导
+  {self._colorize("config-edit", Colors.WHITE)}         - 直接编辑配置文件
+  {self._colorize("config-reset", Colors.WHITE)}        - 重置配置
+  {self._colorize("review-config", Colors.WHITE)}       - 配置复盘功能
+  {self._colorize("search-config", Colors.WHITE)}       - 配置搜索引擎
+  {self._colorize("mcp-config", Colors.WHITE)}          - 配置MCP服务器
+
+{self._colorize("🔍 搜索相关:", Colors.BRIGHT_YELLOW)}
+  {self._colorize("search-status", Colors.WHITE)}       - 显示搜索引擎状态
+  {self._colorize("search-test", Colors.WHITE)}         - 测试搜索功能
+  {self._colorize("search-health", Colors.WHITE)}       - 显示搜索引擎健康状态
+
+{self._colorize("🔧 MCP相关:", Colors.BRIGHT_YELLOW)}
+  {self._colorize("mcp-status", Colors.WHITE)}          - 显示MCP服务器状态
+  {self._colorize("mcp-tools", Colors.WHITE)}           - 显示可用MCP工具
+  {self._colorize("mcp-refresh", Colors.WHITE)}         - 刷新MCP工具列表
+
+{self._colorize("🔍 复盘相关:", Colors.BRIGHT_YELLOW)}
+  {self._colorize("review", Colors.WHITE)}              - 复盘任务执行结果
+  {self._colorize("history", Colors.WHITE)}             - 显示任务执行历史
+
+{self._colorize("ℹ️  信息命令:", Colors.BRIGHT_YELLOW)}
+  {self._colorize("models", Colors.WHITE)}              - 显示可用模型
+
+{self._colorize("💬 会话命令 (在session模式中):", Colors.BRIGHT_YELLOW)}
+  {self._colorize("help", Colors.WHITE)}                - 显示帮助
+  {self._colorize("clear", Colors.WHITE)}               - 清空会话记忆
+  {self._colorize("models", Colors.WHITE)}              - 显示模型信息
+  {self._colorize("review", Colors.WHITE)}              - 复盘最近任务
+  {self._colorize("history", Colors.WHITE)}             - 显示执行历史
+  {self._colorize("exit", Colors.WHITE)}                - 退出会话
+
+{self._colorize("💡 配置文件说明:", Colors.BRIGHT_GREEN)}
+• {self._colorize("config-wizard", Colors.WHITE)} - 完整配置向导，现在会询问是否保留现有配置
+• {self._colorize("config-edit", Colors.WHITE)} - 直接编辑config.yaml文件，支持多种编辑器
+• {self._colorize("各专项配置", Colors.WHITE)} - 只更新对应部分，不会覆盖其他配置
+
+{self._colorize("📝 配置文件结构:", Colors.BRIGHT_GREEN)}
+• models - 模型配置
+• search_engines - 搜索引擎配置  
+• mcp_servers - MCP服务器配置
+• task_review - 复盘功能配置
+• tools - 工具配置
+
+{self._colorize("🔧 MCP Chrome 自定义配置示例:", Colors.BRIGHT_GREEN)}
+要配置自定义MCP服务器（如Chrome Tools），请在配置文件中添加：
+
+```yaml
+mcp_servers:
+  servers:
+  - name: mcp_chrome_tools
+    command: [npx, '@nicholmikey/chrome-tools@latest']
+    args: ['-y']
+    description: Chrome浏览器自动化工具
+    enabled: true
+    auto_restart: true
+    env:
+      CHROME_DEBUG_URL: 'http://localhost:9222'
+```
+
+{self._colorize("🚀 启动Chrome调试模式:", Colors.BRIGHT_GREEN)}
+macOS: /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222
+Windows: chrome.exe --remote-debugging-port=9222
+Linux: google-chrome --remote-debugging-port=9222
+
+更多信息请访问: https://github.com/IntelliCLI/IntelliCLI
+"""
+        print(help_text)
 
 # 全局UI实例
 ui = ModernUI() 

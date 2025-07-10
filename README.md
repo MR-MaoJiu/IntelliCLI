@@ -42,6 +42,14 @@
 - **健康监控**: 实时监控引擎状态，自动禁用失败引擎
 - **故障转移**: 完全自动化的故障转移机制
 
+### 🔧 MCP (Model Context Protocol) 支持 (v1.1 新增)
+- **协议标准**: 支持开放的 MCP 标准，连接外部工具和数据源
+- **多服务器管理**: 同时连接多个 MCP 服务器，统一工具管理
+- **预设服务器**: 内置文件系统、数据库、搜索等常用服务器配置
+- **动态工具加载**: 自动发现和加载 MCP 工具，无缝集成到规划系统
+- **健康检查**: 自动监控服务器状态，支持断线重连
+- **冲突解决**: 智能处理同名工具冲突，确保系统稳定
+
 ### 🛠️ 强大功能
 - **动态任务规划**: 将复杂任务分解为可执行步骤
 - **多模态处理**: 支持文本和图像的统一处理
@@ -227,6 +235,7 @@ intellicli task --review "任务"  # 执行任务并启用复盘
 intellicli models           # 显示可用模型
 intellicli config           # 显示当前配置
 intellicli config-wizard    # 重新配置
+intellicli config-edit      # 直接编辑配置文件
 intellicli config-reset     # 重置配置
 
 # 复盘功能 (v1.1 新增)
@@ -234,6 +243,12 @@ intellicli review           # 复盘最近的任务
 intellicli review --goal "任务目标"  # 复盘指定任务
 intellicli history          # 查看任务历史
 intellicli review-config    # 配置复盘功能
+
+# MCP 服务器管理 (v1.1 新增)
+intellicli mcp-config       # 配置 MCP 服务器
+intellicli mcp-status       # 查看 MCP 服务器状态
+intellicli mcp-tools        # 显示所有可用的 MCP 工具
+intellicli mcp-refresh      # 刷新 MCP 工具列表
 
 # 搜索功能
 intellicli search-config    # 配置搜索引擎
@@ -283,46 +298,94 @@ intellicli history
 ```
 IntelliCLI/
 ├── main.py                    # 主入口点
-├── pyproject.toml            # 项目配置
-├── requirements.txt          # 依赖文件
-├── config.yaml               # 配置文件
-├── install.sh/.bat          # 安装脚本
-├── Dockerfile               # Docker 镜像
+├── pyproject.toml            # 项目配置和依赖
+├── requirements.txt          # Python 依赖文件
+├── config.yaml.template      # 配置文件模板
+├── config.yaml               # 运行时配置文件
+├── install.sh               # Unix/Linux/macOS 安装脚本
+├── install.bat              # Windows 安装脚本
+├── docker-deploy.sh         # Docker 部署脚本
+├── Dockerfile               # Docker 镜像配置
 ├── docker-compose.yml       # Docker 服务编排
-├── Makefile                 # 快捷命令
-├── env.example              # 环境变量示例
-├── /intellicli              # 主包
-│   ├── cli.py              # 命令行界面
-│   ├── /agent              # 智能代理
-│   │   ├── agent.py        # 智能代理主类 (v1.1 新增)
-│   │   ├── planner.py      # 任务规划器
-│   │   ├── executor.py     # 任务执行器
-│   │   ├── model_router.py # 模型路由器 (v1.1 增强)
-│   │   └── task_reviewer.py # 任务复盘器 (v1.1 新增)
-│   ├── /config             # 配置管理
-│   │   ├── model_config.py # 模型配置 (v1.1 增强)
-│   │   └── search_config.py # 搜索配置
-│   ├── /models             # 模型客户端
-│   │   ├── base_llm.py     # 基础接口
-│   │   ├── ollama_client.py # Ollama 客户端
-│   │   ├── gemini_client.py # Gemini 客户端
-│   │   ├── openai_client.py # OpenAI 客户端
-│   │   ├── claude_client.py # Claude 客户端
-│   │   ├── deepseek_client.py # DeepSeek 客户端
-│   │   └── multimodal_manager.py # 多模态管理器
-│   ├── /tools              # 工具模块 (v1.1 全面AI增强)
-│   │   ├── file_system.py  # 文件系统
-│   │   ├── shell.py        # Shell 命令
-│   │   ├── web_search.py   # 网络搜索
-│   │   ├── python_analyzer.py # 代码分析
-│   │   ├── code_analyzer.py # AI代码分析 (v1.1 增强)
-│   │   ├── document_manager.py # AI文档管理 (v1.1 增强)
-│   │   ├── image_processor.py # AI图像处理 (v1.1 增强)
-│   │   └── content_integrator.py # 内容整合
-│   └── /ui                 # 用户界面
-│       └── display.py      # CLI 界面
-└── /docs              # 文档
+├── Makefile                 # 快捷命令集
+├── env.example              # 环境变量配置示例
+├── README.md                # 项目说明文档
+├── /scripts/                # 脚本工具
+│   └── install.py           # Python 安装脚本
+├── /docs/                   # 文档目录
+│   └── MCP_GUIDE.md         # MCP 使用指南
+├── /intellicli/             # 主包目录
+│   ├── __init__.py          # 包初始化
+│   ├── cli.py               # 命令行界面主入口
+│   │
+│   ├── /agent/              # 智能代理模块
+│   │   ├── __init__.py      # 代理包初始化
+│   │   ├── agent.py         # 智能代理主类 (v1.1 新增)
+│   │   ├── planner.py       # 任务规划器
+│   │   ├── executor.py      # 任务执行器
+│   │   ├── model_router.py  # 智能模型路由器 (v1.1 增强)
+│   │   └── task_reviewer.py # 任务复盘分析器 (v1.1 新增)
+│   │
+│   ├── /config/             # 配置管理模块
+│   │   ├── __init__.py      # 配置包初始化
+│   │   ├── model_config.py  # 模型配置管理 (v1.1 增强)
+│   │   └── search_config.py # 搜索引擎配置管理
+│   │
+│   ├── /mcp/                # MCP (Model Context Protocol) 模块 (v1.1 新增)
+│   │   ├── __init__.py      # MCP 包初始化
+│   │   ├── mcp_client.py    # MCP 客户端实现
+│   │   └── mcp_tool_manager.py # MCP 工具管理器
+│   │
+│   ├── /models/             # 模型客户端模块
+│   │   ├── __init__.py      # 模型包初始化
+│   │   ├── base_llm.py      # 模型基础接口定义
+│   │   ├── ollama_client.py # Ollama 本地模型客户端
+│   │   ├── gemini_client.py # Google Gemini 客户端
+│   │   ├── openai_client.py # OpenAI 模型客户端
+│   │   ├── claude_client.py # Anthropic Claude 客户端
+│   │   ├── deepseek_client.py # DeepSeek 模型客户端
+│   │   └── multimodal_manager.py # 多模态处理管理器
+│   │
+│   ├── /tools/              # 工具模块 (v1.1 全面AI增强)
+│   │   ├── __init__.py      # 工具包初始化
+│   │   ├── file_system.py   # 文件系统操作工具
+│   │   ├── shell.py         # Shell 命令执行工具
+│   │   ├── system_operations.py # 系统操作工具
+│   │   ├── git_operations.py # Git 版本控制工具
+│   │   ├── web_search.py    # 智能网络搜索工具
+│   │   ├── python_analyzer.py # Python 代码分析工具
+│   │   ├── code_analyzer.py # AI 代码分析工具 (v1.1 增强)
+│   │   ├── document_manager.py # AI 文档管理工具 (v1.1 增强)
+│   │   ├── image_processor.py # AI 图像处理工具 (v1.1 增强)
+│   │   └── content_integrator.py # 智能内容整合工具
+│   │
+│   └── /ui/                 # 用户界面模块
+│       ├── __init__.py      # UI 包初始化
+│       └── display.py       # 现代化 CLI 界面
+│
+└── /intellicli.egg-info/    # 包安装信息 (自动生成)
 ```
+
+### 📁 目录说明
+
+**核心模块**：
+- `/agent/` - 智能代理系统，负责任务规划、执行和复盘
+- `/models/` - 多种 LLM 模型客户端，支持统一接口调用
+- `/tools/` - 丰富的工具生态，支持文件、代码、图像、网络等操作
+- `/config/` - 灵活的配置管理，支持模型、搜索、MCP 等配置
+- `/mcp/` - MCP 协议实现，扩展外部工具和数据源
+- `/ui/` - 现代化用户界面，提供友好的交互体验
+
+**文档和配置**：
+- `/docs/` - 详细的使用文档和指南
+- `/scripts/` - 安装和部署脚本
+- `config.yaml.template` - 配置文件模板
+- `env.example` - 环境变量配置示例
+
+**部署相关**：
+- `Dockerfile` - 容器化部署配置
+- `docker-compose.yml` - 多服务编排
+- `Makefile` - 便捷的管理命令
 
 ## 🔧 高级功能
 
@@ -376,6 +439,54 @@ IntelliCLI 的智能路由系统完全基于用户配置，支持以下能力标
 - `generate_code_documentation()` - 代码文档生成
 - `suggest_code_improvements()` - 改进建议
 - `explain_code_logic()` - 代码逻辑解释
+
+### MCP (Model Context Protocol) 集成 (v1.1 新增)
+
+**支持的 MCP 服务器**：
+- **文件系统服务器** - 安全的文件操作工具
+- **PostgreSQL 数据库** - 数据库查询和操作
+- **Brave 搜索** - 网络搜索功能扩展
+- **Google Maps** - 地图和位置服务
+- **测试服务器** - 完整的 MCP 功能演示
+
+**配置示例**：
+```yaml
+mcp_servers:
+  servers:
+    - name: filesystem
+      command: ["npx", "@modelcontextprotocol/server-filesystem"]
+      args: ["/Users/username/Projects"]
+      enabled: true
+    - name: postgres
+      command: ["npx", "@modelcontextprotocol/server-postgres"]
+      args: ["postgresql://postgres:password@localhost:5432/mydb"]
+      enabled: true
+```
+
+**MCP 工具集成**：
+- 在任务规划阶段自动发现 MCP 工具
+- 与内置工具统一管理，无缝调用
+- 支持工具名称冲突自动解决
+- 实时健康检查和自动重连
+
+**快速开始 MCP**：
+```bash
+# 1. 安装 MCP 服务器
+npm install -g @modelcontextprotocol/server-everything
+
+# 2. 配置 IntelliCLI
+intellicli mcp-config
+
+# 3. 查看状态和可用工具
+intellicli mcp-status
+intellicli mcp-tools
+
+# 4. 在任务中使用
+intellicli task "使用文件系统工具创建项目结构"
+```
+
+**详细文档**：
+- 📖 [MCP 使用指南](docs/MCP_GUIDE.md) - 完整配置和使用说明
 
 ### 搜索引擎优先级
 
@@ -431,6 +542,12 @@ intellicli task --review "部署一个Docker应用"
 ### 配置驱动的模型选择
 
 ```bash
+# 方式1: 使用配置向导
+intellicli config-wizard
+
+# 方式2: 直接编辑配置文件 (v1.1 新增)
+intellicli config-edit
+
 # 配置文件中定义模型能力和优先级
 models:
   providers:
@@ -444,6 +561,27 @@ models:
 # 系统自动根据配置选择最合适的模型
 # 代码任务 → deepseek_coder (专业+高优先级)
 # 视觉任务 → claude_primary (唯一具备vision能力)
+```
+
+### MCP 工具扩展
+
+```bash
+# 配置文件系统 MCP 服务器
+intellicli mcp-config
+# 选择文件系统服务器，指定允许访问的目录
+
+# 使用 MCP 工具执行文件操作
+intellicli task "列出项目目录中的所有 Python 文件"
+
+# 规划器自动选择合适的工具：
+# 1. 规划阶段: 使用主模型分析任务
+# 2. 执行阶段: 调用 MCP 文件系统工具
+# 3. 结果处理: 使用主模型整理输出
+
+# 查看 MCP 服务器状态
+intellicli mcp-status
+# ✅ filesystem: 已连接, 工具数量: 12
+# ✅ postgres: 已连接, 工具数量: 8
 ```
 
 ## ❓ 常见问题
@@ -461,6 +599,12 @@ models:
 - **Q**: 如何更改主模型？
 - **A**: 编辑 `config.yaml` 中的 `primary` 字段或重新运行配置向导
 
+- **Q**: 如何直接编辑配置文件？ (v1.1 新增)
+- **A**: 运行 `intellicli config-edit` 会自动打开系统默认编辑器，支持VS Code、Cursor等
+
+- **Q**: 配置文件格式错误怎么办？
+- **A**: 使用 `intellicli config` 验证配置文件，注意YAML格式的缩进（使用空格，不要用Tab）
+
 ### 复盘功能相关 (v1.1 新增)
 - **Q**: 如何启用任务复盘？
 - **A**: 运行 `intellicli review-config` 或在配置向导中启用
@@ -477,6 +621,19 @@ models:
 
 - **Q**: 如何配置搜索引擎 API？
 - **A**: 运行 `intellicli search-config` 或设置相应的环境变量
+
+### MCP 相关 (v1.1 新增)
+- **Q**: 如何配置 MCP 服务器？
+- **A**: 运行 `intellicli mcp-config` 启动配置向导，或查看 [MCP 使用指南](docs/MCP_GUIDE.md)
+
+- **Q**: PostgreSQL 服务器连接失败怎么办？
+- **A**: 检查数据库连接 URL 格式，确保使用 `postgresql://user:password@host:port/database` 格式
+
+- **Q**: MCP 工具在规划中不显示？
+- **A**: 使用 `intellicli mcp-status` 检查服务器状态，`intellicli mcp-refresh` 刷新工具列表
+
+- **Q**: 如何安装 MCP 服务器？
+- **A**: 使用 npm 全局安装，如 `npm install -g @modelcontextprotocol/server-filesystem`
 
 ### Docker 相关
 - **Q**: 如何在 Docker 中配置 API 密钥？
@@ -513,9 +670,11 @@ python scripts/install.py uninstall
 - 🧠 **双层模型架构**: 主模型主导规划，专业模型执行任务
 - 🔄 **任务复盘功能**: 智能分析执行结果，自动生成改进建议
 - ⚙️ **配置驱动路由**: 完全基于用户配置的模型能力路由
+- 🔧 **MCP 协议支持**: 完整的 Model Context Protocol 集成，扩展工具生态
 - 🛠️ **AI增强工具**: 图像处理、文档管理、代码分析全面AI增强
 - 📊 **优先级系统**: 支持模型优先级设置，精准控制选择策略
 - 🎯 **智能路由优化**: 8种专业任务类型，动态模型选择
+- 📝 **配置编辑器**: 新增 `config-edit` 命令，支持直接编辑配置文件
 - 📈 **性能提升**: 优化路由算法，提高任务执行效率
 
 ### v1.0.0

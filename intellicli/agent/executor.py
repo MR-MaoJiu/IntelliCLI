@@ -1,7 +1,9 @@
 import json
 import inspect
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import importlib
+import yaml
+import os
 
 class Executor:
     """
@@ -20,18 +22,26 @@ class Executor:
         'intellicli.tools.image_processor',
         'intellicli.tools.web_search',
         'intellicli.tools.content_integrator'
-    ]):
+    ], config_path: str = "config.yaml"):
         """
         初始化执行器并动态加载可用工具。
 
         Args:
             model_client: 模型客户端实例，用于内容整合工具
             tool_modules (List[str]): 定义工具函数的模块列表。
+            config_path (str): 配置文件路径
         """
         self.model_client = model_client
-        self.tools = {}
+        self.config_path = config_path
+        self.tools = {}  # 内置工具
         self.tool_info = {}  # 存储工具的详细信息
+        self.mcp_manager = None  # MCP 工具管理器
+        
+        # 加载内置工具
         self._load_tools(tool_modules)
+        
+        # 加载 MCP 工具
+        self._load_mcp_tools()
         
         # 如果提供了模型客户端，设置给内容整合工具
         if model_client:
@@ -87,6 +97,100 @@ class Executor:
             set_model_client(model_client)
         except ImportError as e:
             print(f"警告: 无法导入内容整合工具: {e}")
+    
+    def _load_mcp_tools(self):
+        """加载 MCP 工具"""
+        try:
+            # 检查配置文件是否存在
+            if not os.path.exists(self.config_path):
+                print(f"配置文件 {self.config_path} 不存在，跳过 MCP 工具加载")
+                return
+            
+            # 读取配置
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            # 检查是否有 MCP 配置
+            mcp_config = config.get('mcp_servers', {})
+            servers = mcp_config.get('servers', [])
+            
+            if not servers:
+                print("💡 未配置 MCP 服务器，使用 'intellicli mcp-config' 来配置")
+                return
+            
+            # 导入 MCP 相关模块
+            try:
+                from ..mcp.mcp_client import MCPServerConfig
+                from ..mcp.mcp_tool_manager import MCPToolManager
+            except ImportError as e:
+                print(f"警告: 无法导入 MCP 模块: {e}")
+                return
+            
+            # 创建服务器配置
+            server_configs = []
+            skipped_servers = []
+            
+            for server_config in servers:
+                if not server_config.get('enabled', True):
+                    skipped_servers.append(server_config.get('name', '未知'))
+                    continue
+                
+                try:
+                    config_obj = MCPServerConfig(
+                        name=server_config['name'],
+                        command=server_config['command'],
+                        args=server_config.get('args', []),
+                        env=server_config.get('env', {}),
+                        description=server_config.get('description', ''),
+                        auto_restart=server_config.get('auto_restart', True),
+                        enabled=server_config.get('enabled', True)
+                    )
+                    server_configs.append(config_obj)
+                except Exception as e:
+                    print(f"⚠️ 跳过无效的服务器配置 '{server_config.get('name', '未知')}': {e}")
+            
+            if skipped_servers:
+                print(f"ℹ️ 跳过了 {len(skipped_servers)} 个已禁用的 MCP 服务器")
+            
+            if not server_configs:
+                print("📝 没有有效的 MCP 服务器配置")
+                return
+            
+            # 创建 MCP 工具管理器
+            self.mcp_manager = MCPToolManager(server_configs)
+            
+            # 连接到所有服务器
+            print(f"🔗 正在连接到 {len(server_configs)} 个 MCP 服务器...")
+            connection_results = self.mcp_manager.connect_all_servers()
+            
+            successful_connections = [name for name, success in connection_results.items() if success]
+            failed_connections = [name for name, success in connection_results.items() if not success]
+            
+            if successful_connections:
+                # 统计可用工具数量
+                total_tools = sum(
+                    len(self.mcp_manager.get_tools_by_server(server_name)) 
+                    for server_name in successful_connections
+                )
+                print(f"✅ 成功连接到 {len(successful_connections)} 个 MCP 服务器，加载了 {total_tools} 个工具")
+                print(f"   服务器: {', '.join(successful_connections)}")
+                
+                # 启动健康检查
+                self.mcp_manager.start_health_check()
+                
+            if failed_connections:
+                print(f"❌ {len(failed_connections)} 个 MCP 服务器连接失败:")
+                for server_name in failed_connections:
+                    server_status = self.mcp_manager.server_status.get(server_name, {})
+                    error_msg = server_status.get('error', '未知错误')
+                    print(f"   • {server_name}: {error_msg}")
+                
+                print(f"💡 提示: 确保已安装相应的 MCP 服务器包")
+                print(f"   例如: npm install -g @modelcontextprotocol/server-filesystem")
+                
+        except Exception as e:
+            print(f"❌ 加载 MCP 工具时出错: {e}")
+            print(f"💡 可以使用 'intellicli mcp-status' 查看详细状态")
 
     def get_tool_info(self) -> List[Dict[str, Any]]:
         """
@@ -95,7 +199,14 @@ class Executor:
         Returns:
             List[Dict[str, Any]]: 包含工具名称、描述和参数信息的列表
         """
-        return list(self.tool_info.values())
+        all_tools = list(self.tool_info.values())
+        
+        # 添加 MCP 工具信息
+        if self.mcp_manager:
+            mcp_tools = self.mcp_manager.get_all_tools()
+            all_tools.extend(mcp_tools)
+        
+        return all_tools
 
     def _process_argument(self, arg_value: Any, last_output: str) -> Any:
         """
@@ -186,6 +297,7 @@ class Executor:
                 detailed_results.append(step_result)
                 continue
 
+            # 检查是否是内置工具
             if tool_name in self.tools:
                 try:
                     tool_function = self.tools[tool_name]
@@ -247,9 +359,56 @@ class Executor:
                     error_message = f"执行工具 {tool_name} 时出错: {e}"
                     print(f"  \\_ 错误: {error_message}")
                     step_result['error'] = error_message
+            
+                        # 检查是否是 MCP 工具
+            elif self.mcp_manager:
+                print(f"  \\_ 调试: MCP 管理器存在，检查工具: {tool_name}")
+                is_mcp_tool = self.mcp_manager.is_mcp_tool(tool_name)
+                print(f"  \\_ 调试: 工具 '{tool_name}' 是否为 MCP 工具: {is_mcp_tool}")
+                if is_mcp_tool:
+                    try:
+                        print(f"  \\_ 调用 MCP 工具: {tool_name}")
+                        
+                        # 调用 MCP 工具
+                        output = self.mcp_manager.call_tool(tool_name, processed_arguments)
+                        
+                        # 格式化输出显示
+                        if isinstance(output, dict):
+                            display_output = json.dumps(output, indent=2, ensure_ascii=False)
+                        else:
+                            display_output = str(output)
+                        
+                        # 限制显示长度
+                        if len(display_output) > 200:
+                            print(f"  \\_ 结果: {display_output[:200]}...")
+                        else:
+                            print(f"  \\_ 结果: {display_output}")
+                        
+                        step_result['status'] = 'completed'
+                        step_result['output'] = output
+                        last_output = str(output) # 更新上一个输出，确保转换为字符串
+                        
+                    except Exception as e:
+                        error_message = f"执行 MCP 工具 {tool_name} 时出错: {e}"
+                        print(f"  \\_ 错误: {error_message}")
+                        step_result['error'] = error_message
+                else:
+                    # 不是 MCP 工具，继续到 else 分支
+                    pass
+            
             else:
-                available_tools = list(self.tools.keys())
-                error_message = f"未找到工具 '{tool_name}'。可用工具: {available_tools}"
+                # 工具不存在 - 添加调试信息
+                available_builtin_tools = list(self.tools.keys())
+                available_mcp_tools = []
+                if self.mcp_manager:
+                    available_mcp_tools = list(self.mcp_manager.all_tools.keys())
+                    print(f"  \\_ 调试: MCP 管理器存在，可用 MCP 工具: {available_mcp_tools}")
+                    print(f"  \\_ 调试: 工具 '{tool_name}' 是否为 MCP 工具: {self.mcp_manager.is_mcp_tool(tool_name)}")
+                else:
+                    print(f"  \\_ 调试: MCP 管理器不存在")
+                
+                all_available_tools = available_builtin_tools + available_mcp_tools
+                error_message = f"未找到工具 '{tool_name}'。可用工具: {all_available_tools[:10]}{'...' if len(all_available_tools) > 10 else ''}"
                 print(f"  \\_ 错误: {error_message}")
                 step_result['error'] = error_message
             
@@ -264,3 +423,31 @@ class Executor:
         print(f"总步骤: {len(detailed_results)}, 成功: {len(completed_steps)}, 失败: {len(failed_steps)}")
         
         return detailed_results
+    
+    def get_mcp_status(self) -> Optional[Dict[str, Any]]:
+        """获取 MCP 状态信息"""
+        if not self.mcp_manager:
+            return None
+        
+        return {
+            "statistics": self.mcp_manager.get_statistics(),
+            "server_status": self.mcp_manager.get_server_status(),
+            "available_servers": self.mcp_manager.get_available_servers()
+        }
+    
+    def refresh_mcp_tools(self):
+        """刷新 MCP 工具"""
+        if self.mcp_manager:
+            self.mcp_manager.refresh_tools()
+            print("MCP 工具已刷新")
+        else:
+            print("MCP 管理器未初始化")
+    
+    def __del__(self):
+        """析构函数，确保 MCP 连接正确关闭"""
+        if hasattr(self, 'mcp_manager') and self.mcp_manager:
+            try:
+                self.mcp_manager.stop_health_check()
+                self.mcp_manager.disconnect_all_servers()
+            except Exception as e:
+                print(f"关闭 MCP 连接时出错: {e}")
