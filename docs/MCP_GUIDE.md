@@ -331,7 +331,6 @@ A: 可以，系统会自动处理工具名称冲突。
 
 - [MCP 官方文档](https://modelcontextprotocol.io/)
 - [MCP 服务器列表](https://github.com/modelcontextprotocol/servers)
-- [IntelliCLI 官方文档](https://github.com/your-repo/intellicli)
 
 ---
 
