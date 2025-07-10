@@ -167,8 +167,8 @@ def analyze_image(image_path: str, prompt: str = "请描述这张图片的内容
         # 整合结果
         result = f"图像分析结果:\n"
         result += f"文件路径: {image_path}\n"
-        result += f"图像信息: {image_info['format']} 格式，{image_info['size']} 像素\n"
-        result += f"文件大小: {image_info['file_size']}\n"
+        result += f"图像信息: {image_info['format']} 格式，{image_info['width']}x{image_info['height']} 像素\n"
+        result += f"文件大小: {image_info['size']} 字节\n"
         result += f"分析内容: {analysis_result}"
         
         return result
