@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 import importlib
 import yaml
 import os
+import time # Added for time.time()
 
 class Executor:
     """
@@ -253,23 +254,33 @@ class Executor:
             List[Dict[str, Any]]: 包含每个已执行任务的详细结果的列表。
                                   每个结果字典包含 'step', 'tool', 'arguments', 'status', 'output' 和 'error'。
         """
+        # 导入 UI 模块
+        from ..ui.display import ui
+        
         detailed_results = []
         total_steps = len(plan)
         last_output = "" # 用于存储上一个成功步骤的输出
+        
+        # 记录总执行开始时间
+        total_start_time = time.time()
+        
+        # 显示执行开始
+        ui.print_execution_header()
 
         for i, task in enumerate(plan):
             step_num = i + 1
-            print(f"\n[执行步骤 {step_num}/{total_steps}]: {task.get('tool')}...")
-            
             tool_name = task.get("tool")
             arguments = task.get("arguments", {})
+            
+            # 使用增强的步骤执行显示
+            ui.print_step_execution_enhanced(step_num, total_steps, tool_name, 
+                                           model=getattr(self, 'model_name', None))
             
             # 替换占位符
             try:
                 processed_arguments = {k: self._process_argument(v, last_output) for k, v in arguments.items()}
             except Exception as e:
                 error_message = f"处理参数占位符时出错: {e}"
-                print(f"  \\_ 错误: {error_message}")
                 step_result = {
                     "step": task.get('step', step_num),
                     "tool": tool_name,
@@ -279,6 +290,10 @@ class Executor:
                     "error": error_message
                 }
                 detailed_results.append(step_result)
+                
+                # 使用增强的完成显示
+                ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                error_message, is_error=True)
                 continue
             
             step_result = {
@@ -292,9 +307,12 @@ class Executor:
 
             if not tool_name:
                 error_message = "工具名称为空"
-                print(f"  \\_ 错误: {error_message}")
                 step_result['error'] = error_message
                 detailed_results.append(step_result)
+                
+                # 使用增强的完成显示
+                ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                error_message, is_error=True)
                 continue
 
             # 检查是否是内置工具
@@ -305,9 +323,12 @@ class Executor:
                     # 检查工具函数是否存在
                     if not callable(tool_function):
                         error_message = f"工具 {tool_name} 不可调用"
-                        print(f"  \\_ 错误: {error_message}")
                         step_result['error'] = error_message
                         detailed_results.append(step_result)
+                        
+                        # 使用增强的完成显示
+                        ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                        error_message, is_error=True)
                         continue
                     
                     # 验证参数名称
@@ -319,10 +340,19 @@ class Executor:
                         invalid_params = [p for p in provided_params if p not in expected_params]
                         if invalid_params:
                             error_message = f"工具 {tool_name} 收到无效参数: {invalid_params}。期望参数: {expected_params}"
-                            print(f"  \\_ 错误: {error_message}")
                             step_result['error'] = error_message
                             detailed_results.append(step_result)
+                            
+                            # 使用增强的完成显示
+                            ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                            error_message, is_error=True)
                             continue
+                    
+                    # 对于长时间运行的任务显示警告
+                    if tool_name == 'run_shell_command' and processed_arguments.get('command'):
+                        command = processed_arguments['command']
+                        if any(keyword in command.lower() for keyword in ['install', 'build', 'compile', 'download']):
+                            ui.print_long_running_task_warning(f"Shell命令: {command[:50]}...")
                     
                     # 调用工具函数
                     output = tool_function(**processed_arguments)
@@ -330,97 +360,98 @@ class Executor:
                     # 检查输出是否为错误信息
                     if isinstance(output, str) and ("出错" in output or "错误" in output or "Error" in output):
                         error_message = output
-                        print(f"  \\_ 错误: {error_message}")
                         step_result['error'] = error_message
                         detailed_results.append(step_result)
+                        
+                        # 使用增强的完成显示
+                        ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                        error_message, is_error=True)
                         continue
                     
-                    # 格式化输出显示
-                    if isinstance(output, dict):
-                        display_output = json.dumps(output, indent=2, ensure_ascii=False)
-                    else:
-                        display_output = str(output)
-                    
-                    # 限制显示长度
-                    if len(display_output) > 200:
-                        print(f"  \\_ 结果: {display_output[:200]}...")
-                    else:
-                        print(f"  \\_ 结果: {display_output}")
-                    
+                    # 成功执行
                     step_result['status'] = 'completed'
                     step_result['output'] = output
                     last_output = str(output) # 更新上一个输出，确保转换为字符串
                     
+                    # 使用增强的完成显示
+                    display_output = str(output)
+                    ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                    display_output, is_error=False)
+                    
                 except TypeError as e:
                     error_message = f"工具 {tool_name} 参数错误: {e}"
-                    print(f"  \\_ 错误: {error_message}")
                     step_result['error'] = error_message
+                    
+                    # 使用增强的完成显示
+                    ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                    error_message, is_error=True)
                 except Exception as e:
                     error_message = f"执行工具 {tool_name} 时出错: {e}"
-                    print(f"  \\_ 错误: {error_message}")
                     step_result['error'] = error_message
+                    
+                    # 使用增强的完成显示
+                    ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                    error_message, is_error=True)
             
-                        # 检查是否是 MCP 工具
+            # 检查是否是 MCP 工具
             elif self.mcp_manager:
-                print(f"  \\_ 调试: MCP 管理器存在，检查工具: {tool_name}")
                 is_mcp_tool = self.mcp_manager.is_mcp_tool(tool_name)
-                print(f"  \\_ 调试: 工具 '{tool_name}' 是否为 MCP 工具: {is_mcp_tool}")
                 if is_mcp_tool:
                     try:
-                        print(f"  \\_ 调用 MCP 工具: {tool_name}")
-                        
                         # 调用 MCP 工具
                         output = self.mcp_manager.call_tool(tool_name, processed_arguments)
-                        
-                        # 格式化输出显示
-                        if isinstance(output, dict):
-                            display_output = json.dumps(output, indent=2, ensure_ascii=False)
-                        else:
-                            display_output = str(output)
-                        
-                        # 限制显示长度
-                        if len(display_output) > 200:
-                            print(f"  \\_ 结果: {display_output[:200]}...")
-                        else:
-                            print(f"  \\_ 结果: {display_output}")
                         
                         step_result['status'] = 'completed'
                         step_result['output'] = output
                         last_output = str(output) # 更新上一个输出，确保转换为字符串
                         
+                        # 使用增强的完成显示
+                        display_output = str(output)
+                        ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                        display_output, is_error=False)
+                        
                     except Exception as e:
                         error_message = f"执行 MCP 工具 {tool_name} 时出错: {e}"
-                        print(f"  \\_ 错误: {error_message}")
                         step_result['error'] = error_message
+                        
+                        # 使用增强的完成显示
+                        ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                        error_message, is_error=True)
                 else:
                     # 不是 MCP 工具，继续到 else 分支
                     pass
             
             else:
-                # 工具不存在 - 添加调试信息
+                # 工具不存在
                 available_builtin_tools = list(self.tools.keys())
                 available_mcp_tools = []
                 if self.mcp_manager:
                     available_mcp_tools = list(self.mcp_manager.all_tools.keys())
-                    print(f"  \\_ 调试: MCP 管理器存在，可用 MCP 工具: {available_mcp_tools}")
-                    print(f"  \\_ 调试: 工具 '{tool_name}' 是否为 MCP 工具: {self.mcp_manager.is_mcp_tool(tool_name)}")
-                else:
-                    print(f"  \\_ 调试: MCP 管理器不存在")
                 
                 all_available_tools = available_builtin_tools + available_mcp_tools
                 error_message = f"未找到工具 '{tool_name}'。可用工具: {all_available_tools[:10]}{'...' if len(all_available_tools) > 10 else ''}"
-                print(f"  \\_ 错误: {error_message}")
                 step_result['error'] = error_message
+                
+                # 使用增强的完成显示
+                ui.print_step_completion_enhanced(step_num, total_steps, tool_name, 
+                                                error_message, is_error=True)
             
             detailed_results.append(step_result)
 
-        print("\n执行完成。")
+        # 计算总执行时间
+        total_execution_time = time.time() - total_start_time
         
         # 统计执行结果
         completed_steps = [r for r in detailed_results if r['status'] == 'completed']
         failed_steps = [r for r in detailed_results if r['status'] == 'failed']
         
-        print(f"总步骤: {len(detailed_results)}, 成功: {len(completed_steps)}, 失败: {len(failed_steps)}")
+        # 使用增强的统计信息显示
+        ui.print_execution_stats(
+            total_time=total_execution_time,
+            steps_executed=len(detailed_results),
+            success_count=len(completed_steps),
+            failure_count=len(failed_steps)
+        )
         
         return detailed_results
     

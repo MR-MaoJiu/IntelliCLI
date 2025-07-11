@@ -69,6 +69,7 @@ class ModernUI:
     def __init__(self, config: UIConfig = None):
         self.config = config or UIConfig()
         self._current_section = None
+        self._step_start_time = None  # 添加步骤开始时间追踪
         
         # 初始化输入历史记录
         self.input_history = InMemoryHistory()
@@ -124,7 +125,7 @@ class ModernUI:
 |  ██║██║ ╚████║   ██║   ███████╗███████╗███████╗██║╚██████╗███████╗██║         |
 |  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚══════╝╚══════╝╚═╝ ╚═════╝╚══════╝╚═╝         |
 |                                                                               |
-|                     🚀 IntelliCLI 智能命令行助手 v1.1.0                       |
+|                     🚀 IntelliCLI 智能命令行助手 v1.1.1                       |
 |                        让AI为你规划和执行任务                                 |
 |                                                                               |
 +===============================================================================+
@@ -511,6 +512,156 @@ Linux: google-chrome --remote-debugging-port=9222
 更多信息请访问: https://github.com/IntelliCLI/IntelliCLI
 """
         print(help_text)
+
+    def print_step_execution_enhanced(self, step: int, total: int, tool: str, model: str = None):
+        """显示增强的步骤执行状态"""
+        # 记录步骤开始时间
+        self._step_start_time = time.time()
+        
+        # 创建进度条
+        progress_bar = self._create_progress_bar(step, total)
+        
+        # 显示步骤信息
+        self._print(f"\n{progress_bar}", Colors.BRIGHT_BLUE)
+        self._print(f"   ⏳ 步骤 {step}/{total}: {tool}...", Colors.BRIGHT_YELLOW)
+        
+        if model:
+            self._print(f"💡   🤖 执行模型: {model}", Colors.DIM)
+        
+        # 显示开始时间
+        start_time_str = time.strftime('%H:%M:%S', time.localtime(self._step_start_time))
+        self._print(f"      📍 开始时间: {start_time_str}", Colors.DIM)
+    
+    def print_step_completion_enhanced(self, step: int, total: int, tool: str, result: str, is_error: bool = False):
+        """显示增强的步骤完成状态"""
+        # 计算执行时间
+        execution_time = 0
+        if self._step_start_time:
+            execution_time = time.time() - self._step_start_time
+        
+        # 创建进度条
+        progress_bar = self._create_progress_bar(step, total)
+        
+        if is_error:
+            self._print(f"   ❌ 步骤 {step}/{total}: {tool}", Colors.BRIGHT_RED)
+            self._print(f"      ❌ 错误: {result}", Colors.BRIGHT_RED)
+        else:
+            self._print(f"   ✅ 步骤 {step}/{total}: {tool}", Colors.BRIGHT_GREEN)
+            # 限制结果显示长度
+            display_result = result if len(result) <= 100 else result[:97] + "..."
+            self._print(f"      📄 结果: {display_result}", Colors.DIM)
+        
+        # 显示执行时间
+        self._print(f"      ⏱️ 执行时间: {execution_time:.2f}s", Colors.DIM)
+        
+        # 重置开始时间
+        self._step_start_time = None
+    
+    def _create_progress_bar(self, current: int, total: int, width: int = 40) -> str:
+        """创建进度条"""
+        progress = current / total
+        filled_width = int(width * progress)
+        
+        # 创建进度条
+        bar = "█" * filled_width + "▒" * (width - filled_width)
+        percentage = int(progress * 100)
+        
+        return f"   🔄 进度: [{bar}] {percentage}% ({current}/{total})"
+    
+    def print_command_execution_start(self, command: str):
+        """显示命令开始执行"""
+        self._print(f"      🔄 正在执行: {command}", Colors.BRIGHT_CYAN)
+        self._print(f"      📍 开始时间: {time.strftime('%H:%M:%S')}", Colors.DIM)
+    
+    def print_command_real_time_output(self, output: str):
+        """显示命令实时输出"""
+        if output.strip():
+            self._print(f"      📝 {output.strip()}", Colors.WHITE)
+    
+    def print_command_execution_complete(self, success: bool, execution_time: float, return_code: int = 0):
+        """显示命令执行完成"""
+        if success:
+            self._print(f"      ✅ 命令执行成功 (耗时: {execution_time:.2f}s)", Colors.BRIGHT_GREEN)
+        else:
+            self._print(f"      ❌ 命令执行失败 (返回码: {return_code}, 耗时: {execution_time:.2f}s)", Colors.BRIGHT_RED)
+    
+    def print_long_running_task_warning(self, task_name: str, timeout: int = 300):
+        """显示长时间运行任务的警告"""
+        self._print(f"      ⚠️  长时间任务警告: {task_name}", Colors.BRIGHT_YELLOW)
+        self._print(f"      ⏰ 预计可能需要较长时间执行，请耐心等待...", Colors.YELLOW)
+        self._print(f"      💡 提示: 如果超过 {timeout}s 仍未完成，可以考虑中断任务", Colors.DIM)
+    
+    def show_spinner_with_message(self, message: str, duration: float = 1.0):
+        """显示带消息的旋转器"""
+        spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        start_time = time.time()
+        i = 0
+        
+        while time.time() - start_time < duration:
+            elapsed = time.time() - start_time
+            sys.stdout.write(f"\r      {spinners[i]} {message} ({elapsed:.1f}s)")
+            sys.stdout.flush()
+            i = (i + 1) % len(spinners)
+            time.sleep(0.1)
+        
+        # 清除spinner
+        sys.stdout.write('\r' + ' ' * (len(message) + 20) + '\r')
+        sys.stdout.flush()
+    
+    def print_execution_stats(self, total_time: float, steps_executed: int, success_count: int, failure_count: int):
+        """显示执行统计信息"""
+        self._print("")
+        self.print_section_header("执行统计", "📊")
+        
+        # 成功率计算
+        success_rate = (success_count / steps_executed * 100) if steps_executed > 0 else 0
+        
+        # 选择状态颜色
+        if success_rate >= 90:
+            status_color = Colors.BRIGHT_GREEN
+            status_icon = "🎉"
+        elif success_rate >= 70:
+            status_color = Colors.BRIGHT_YELLOW
+            status_icon = "⚠️"
+        else:
+            status_color = Colors.BRIGHT_RED
+            status_icon = "❌"
+        
+        self._print(f"   {status_icon} 整体成功率: {success_rate:.1f}%", status_color)
+        self._print(f"   📈 执行步骤: {steps_executed}", Colors.BRIGHT_WHITE)
+        self._print(f"   ✅ 成功步骤: {success_count}", Colors.BRIGHT_GREEN)
+        self._print(f"   ❌ 失败步骤: {failure_count}", Colors.BRIGHT_RED)
+        self._print(f"   ⏱️ 总执行时间: {total_time:.2f}s", Colors.BRIGHT_CYAN)
+        self._print(f"   📊 平均每步时间: {total_time/steps_executed:.2f}s", Colors.DIM)
+
+    def print_interactive_prompt(self, command: str, prompt_text: str):
+        """显示交互式输入提示"""
+        self._print("")
+        self._print(f"      🔄 命令需要用户交互:", Colors.BRIGHT_YELLOW)
+        self._print(f"      📝 提示信息: {prompt_text}", Colors.WHITE)
+        self._print(f"      💡 请直接在下方输入响应:", Colors.BRIGHT_BLUE)
+        self._print(f"      " + "="*60, Colors.DIM)
+    
+    def print_interactive_input_received(self, user_input: str):
+        """显示已接收的用户输入"""
+        self._print(f"      ✅ 已发送输入: {user_input}", Colors.BRIGHT_GREEN)
+        self._print(f"      🔄 继续执行命令...", Colors.BRIGHT_YELLOW)
+        self._print(f"      " + "="*60, Colors.DIM)
+    
+    def print_interactive_warning(self):
+        """显示交互模式警告"""
+        self._print(f"      ⚠️  检测到长时间无响应的命令", Colors.BRIGHT_YELLOW)
+        self._print(f"      💡 可能需要用户交互，请检查命令输出", Colors.BRIGHT_BLUE)
+        self._print(f"      🔄 如需交互，请直接在终端中操作", Colors.DIM)
+    
+    def print_command_waiting_input(self, waiting_time: float):
+        """显示命令等待输入状态"""
+        self._print(f"      ⏳ 命令等待用户输入 (已等待: {waiting_time:.1f}s)", Colors.BRIGHT_YELLOW)
+    
+    def print_interactive_mode_detected(self, trigger: str):
+        """显示检测到交互模式"""
+        self._print(f"      🔍 交互检测: {trigger}", Colors.BRIGHT_CYAN)
+        self._print(f"      💬 准备接收用户输入...", Colors.BRIGHT_BLUE)
 
 # 全局UI实例
 ui = ModernUI() 
