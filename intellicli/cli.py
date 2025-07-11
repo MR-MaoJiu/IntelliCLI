@@ -243,27 +243,62 @@ class Agent:
         返回 True 如果任务完成，否则返回 False。
         """
         current_plan = []
+        all_completed_steps = []  # 累积所有成功的步骤
+        
         for p_attempt in range(max_planning_attempts):
             # 使用现代化UI显示规划尝试
             ui.print_planning_attempt(p_attempt + 1, max_planning_attempts)
             
             # 规划阶段：固定使用主模型进行整体思考规划
-            ui.print_info(f"🧠 规划阶段: 使用主模型进行整体思考规划")
-            
-            # 确保规划器使用主模型
-            if self.primary_model_client:
-                self.planner.model_client = self.primary_model_client
+            if p_attempt == 0:
+                # 首次规划：使用完整规划
+                ui.print_info(f"🧠 规划阶段: 使用主模型进行整体思考规划")
+                
+                # 确保规划器使用主模型
+                if self.primary_model_client:
+                    self.planner.model_client = self.primary_model_client
+                else:
+                    ui.print_error("无法获取主模型客户端")
+                    return False
+                
+                # 生成智能化的规划提示
+                planning_prompt = self._generate_context_prompt(goal)
+
+                # 获取规划器可用的工具列表，包含详细的参数信息
+                available_tools = self.executor.get_tool_info()
+
+                current_plan = self.planner.create_plan(planning_prompt, available_tools)
             else:
-                ui.print_error("无法获取主模型客户端")
-                return False
-            
-            # 生成智能化的规划提示
-            planning_prompt = self._generate_context_prompt(goal)
+                # 续接规划：从失败位置继续
+                ui.print_info(f"🔄 续接规划: 从失败位置继续，保留已完成的 {len(all_completed_steps)} 个步骤")
+                
+                # 确保规划器使用主模型
+                if self.primary_model_client:
+                    self.planner.model_client = self.primary_model_client
+                else:
+                    ui.print_error("无法获取主模型客户端")
+                    return False
+                
+                # 从上下文中获取失败步骤信息
+                failed_steps = []
+                if self.context:
+                    last_context = self.context[-1]
+                    if 'failed_steps' in last_context:
+                        failed_steps = last_context['failed_steps']
+                
+                # 生成智能化的规划提示
+                planning_prompt = self._generate_context_prompt(goal)
 
-            # 获取规划器可用的工具列表，包含详细的参数信息
-            available_tools = self.executor.get_tool_info()
+                # 获取规划器可用的工具列表，包含详细的参数信息
+                available_tools = self.executor.get_tool_info()
 
-            current_plan = self.planner.create_plan(planning_prompt, available_tools)
+                # 使用续接规划
+                current_plan = self.planner.create_continuation_plan(
+                    original_goal=planning_prompt,
+                    completed_steps=all_completed_steps,
+                    failed_steps=failed_steps,
+                    tools=available_tools
+                )
             
             if not current_plan:
                 ui.print_error("规划器未能生成有效计划。重试规划...")
@@ -273,6 +308,10 @@ class Agent:
             if self._is_duplicate_plan(current_plan):
                 ui.print_warning("检测到重复计划，尝试生成新的计划...")
                 continue
+            
+            # 显示当前状态
+            if all_completed_steps:
+                ui.print_info(f"📋 当前状态: 已完成 {len(all_completed_steps)} 个步骤，准备执行后续 {len(current_plan)} 个步骤")
             
             # 使用现代化UI显示计划
             ui.print_plan(current_plan)
@@ -284,55 +323,129 @@ class Agent:
                 # 执行计划并使用新UI显示进度，传入目标用于智能模型选择
                 execution_results = self._execute_plan_with_ui(current_plan, goal)
                 
-                # 更新会话记忆
-                self._update_session_memory(current_plan, execution_results)
+                # 分离成功和失败的步骤
+                current_completed_steps = [res for res in execution_results if res['status'] == 'completed']
+                current_failed_steps = [res for res in execution_results if res['status'] == 'failed']
+                
+                # 累积成功步骤
+                all_completed_steps.extend(current_completed_steps)
+                
+                # 更新会话记忆（包括所有步骤）
+                all_current_results = all_completed_steps + current_failed_steps
+                self._update_session_memory(current_plan, all_current_results)
                 
                 # 更新上下文
-                self.context.append({"plan": current_plan, "results": execution_results})
+                self.context.append({
+                    "plan": current_plan, 
+                    "results": execution_results,
+                    "all_completed_steps": all_completed_steps,
+                    "current_attempt": p_attempt + 1
+                })
 
-                failed_steps = [res for res in execution_results if res['status'] == 'failed']
-                
                 # 显示执行摘要
-                total_steps = len(execution_results)
-                success_steps = len([res for res in execution_results if res['status'] == 'completed'])
-                ui.print_execution_summary(total_steps, success_steps, len(failed_steps))
+                total_steps_executed = len(execution_results)
+                success_steps_current = len(current_completed_steps)
+                ui.print_execution_summary(total_steps_executed, success_steps_current, len(current_failed_steps))
                 
-                if not failed_steps:
-                    # 记录成功完成的任务到历史中
-                    self._record_task_to_history(goal, current_plan, execution_results, True)
+                # 显示累积进度
+                if all_completed_steps:
+                    ui.print_info(f"📊 累积进度: 总共完成 {len(all_completed_steps)} 个步骤")
+                
+                if not current_failed_steps:
+                    # 当前批次全部成功完成
+                    ui.print_success("🎉 任务成功完成！")
+                    
+                    # 记录成功完成的任务到历史中（包含所有步骤）
+                    final_plan = []
+                    for i, step in enumerate(all_completed_steps, 1):
+                        final_plan.append({
+                            "step": i,
+                            "tool": step.get('tool'),
+                            "arguments": step.get('arguments')
+                        })
+                    
+                    self._record_task_to_history(goal, final_plan, all_completed_steps, True)
                     return True # 任务成功完成
                 else:
-                    ui.print_info(f"尝试重新规划...")
+                    ui.print_info(f"⚠️  当前批次有 {len(current_failed_steps)} 个步骤失败，尝试续接规划...")
                     # 将失败信息添加到上下文，以便规划器可以学习
-                    self.context.append({"failed_steps": failed_steps, "attempt": p_attempt + 1})
-                    continue # 继续下一次规划尝试
+                    self.context.append({
+                        "failed_steps": current_failed_steps, 
+                        "attempt": p_attempt + 1,
+                        "completed_so_far": len(all_completed_steps)
+                    })
+                    continue # 继续下一次续接规划尝试
             else:
                 ui.print_info("用户取消了计划执行。任务终止。")
+                
+                # 记录部分完成的任务到历史中
+                if all_completed_steps:
+                    final_plan = []
+                    for i, step in enumerate(all_completed_steps, 1):
+                        final_plan.append({
+                            "step": i,
+                            "tool": step.get('tool'),
+                            "arguments": step.get('arguments')
+                        })
+                    self._record_task_to_history(goal, final_plan, all_completed_steps, False)
+                    ui.print_info(f"📊 已保存部分完成的进度: {len(all_completed_steps)} 个步骤")
+                
                 return False
         
-        ui.print_error("代理在多次尝试后未能完成任务。")
-        # 记录失败的任务到历史中
-        if current_plan:
-            final_results = self.context[-1].get('results', []) if self.context else []
-            self._record_task_to_history(goal, current_plan, final_results, False)
-        return False
+        # 如果所有尝试都失败了，但有部分成功步骤
+        if all_completed_steps:
+            ui.print_warning(f"⚠️  任务未完全完成，但成功执行了 {len(all_completed_steps)} 个步骤")
+            
+            # 记录部分完成的任务到历史中
+            final_plan = []
+            for i, step in enumerate(all_completed_steps, 1):
+                final_plan.append({
+                    "step": i,
+                    "tool": step.get('tool'),
+                    "arguments": step.get('arguments')
+                })
+            self._record_task_to_history(goal, final_plan, all_completed_steps, False)
+            return False
+        else:
+            ui.print_error("代理在多次尝试后未能完成任务。")
+            return False
 
     def _execute_plan_with_ui(self, plan: List[Dict[str, Any]], goal: str) -> List[Dict[str, Any]]:
-        """使用现代UI执行计划，并为每个步骤选择最合适的专业模型"""
+        """
+        执行计划并使用UI显示进度，支持智能模型选择
+        
+        Args:
+            plan: 执行计划
+            goal: 任务目标，用于智能模型选择
+            
+        Returns:
+            执行结果列表
+        """
+        # 计算初始输出：使用最后一个成功步骤的输出
+        initial_output = ""
+        if hasattr(self, 'context') and self.context:
+            # 从上下文中查找累积的成功步骤
+            for context_item in reversed(self.context):
+                if 'all_completed_steps' in context_item:
+                    completed_steps = context_item['all_completed_steps']
+                    if completed_steps:
+                        last_step = completed_steps[-1]
+                        if last_step.get('output'):
+                            initial_output = str(last_step['output'])
+                            break
+        
         results = []
         total_steps = len(plan)
         
-        for i, task in enumerate(plan):
-            step_num = i + 1
+        for task in plan:
             tool_name = task.get("tool")
             arguments = task.get("arguments", {})
+            step_num = task.get('step', len(results) + 1)
             
-            # 显示步骤开始
-            ui.print_step_execution(step_num, total_steps, tool_name, "running")
+            # 智能模型选择
+            selected_model = self._select_model_for_task(task, goal)
             
-            # 为当前步骤选择最合适的专业模型
-            selected_model = self._select_model_for_step(task, goal)
-            ui.print_info(f"  🤖 执行模型: {selected_model}")
+            ui.print_info(f"🤖 步骤 {step_num}: 使用模型 [{selected_model}] 执行 {tool_name}")
             
             # 处理占位符
             try:
@@ -341,6 +454,9 @@ class Agent:
                     last_successful = [r for r in results if r['status'] == 'completed']
                     if last_successful:
                         last_output = str(last_successful[-1]['output'])
+                    elif initial_output:
+                        # 如果当前批次没有成功步骤，使用初始输出
+                        last_output = initial_output
                 
                 processed_arguments = {k: self.executor._process_argument(v, last_output) for k, v in arguments.items()}
             except Exception as e:
@@ -374,7 +490,7 @@ class Agent:
         
         return results
 
-    def _select_model_for_step(self, task: Dict[str, Any], goal: str) -> str:
+    def _select_model_for_task(self, task: Dict[str, Any], goal: str) -> str:
         """为特定步骤选择最合适的专业模型"""
         tool_name = task.get("tool")
         arguments = task.get("arguments", {})

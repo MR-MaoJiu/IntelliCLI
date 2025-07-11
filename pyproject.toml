@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "intellicli"
-version = "1.1.0"
+version = "1.1.1"
 description = "一个智能命令行助手，结合大型语言模型和动态任务规划"
 readme = "README.md"
 requires-python = ">=3.8"

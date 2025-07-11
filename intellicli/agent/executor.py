@@ -243,12 +243,13 @@ class Executor:
         else:
             return arg_value
 
-    def execute_plan(self, plan: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def execute_plan(self, plan: List[Dict[str, Any]], initial_output: str = "") -> List[Dict[str, Any]]:
         """
         逐步执行计划。
 
         Args:
             plan (List[Dict[str, Any]]): 要执行的任务列表。
+            initial_output (str): 初始输出，用于续接执行时作为第一个<PREVIOUS_STEP_OUTPUT>的值
 
         Returns:
             List[Dict[str, Any]]: 包含每个已执行任务的详细结果的列表。
@@ -259,7 +260,7 @@ class Executor:
         
         detailed_results = []
         total_steps = len(plan)
-        last_output = "" # 用于存储上一个成功步骤的输出
+        last_output = initial_output or "" # 使用初始输出作为起始值
         
         # 记录总执行开始时间
         total_start_time = time.time()

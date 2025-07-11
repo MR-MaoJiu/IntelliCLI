@@ -133,6 +133,154 @@ class Planner:
         print("错误: 模型在多次尝试后未能生成有效的计划。")
         return []
 
+    def create_continuation_plan(
+        self, 
+        original_goal: str, 
+        completed_steps: List[Dict[str, Any]], 
+        failed_steps: List[Dict[str, Any]], 
+        tools: List[Dict[str, Any]], 
+        max_retries: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        生成续接计划，从失败位置继续执行，不重复已成功的步骤。
+        
+        Args:
+            original_goal: 原始目标
+            completed_steps: 已成功完成的步骤及其结果
+            failed_steps: 失败的步骤及其错误信息
+            tools: 可用工具列表
+            max_retries: 最大重试次数
+        
+        Returns:
+            续接计划列表
+        """
+        # 获取当前系统信息
+        system_info = self._get_system_info()
+        
+        # 构建详细的工具说明
+        tool_descriptions = []
+        for tool in tools:
+            tool_name = tool['name']
+            tool_desc = tool.get('description', '无描述')
+            
+            # 构建参数信息
+            param_info = []
+            for param in tool.get('parameters', []):
+                param_name = param['name']
+                param_type = param.get('type', 'Any')
+                required = param.get('required', True)
+                required_marker = " (必需)" if required else " (可选)"
+                param_info.append(f"  - {param_name}: {param_type}{required_marker}")
+            
+            if param_info:
+                tool_descriptions.append(f"- {tool_name}: {tool_desc}\n" + "\n".join(param_info))
+            else:
+                tool_descriptions.append(f"- {tool_name}: {tool_desc}")
+        
+        # 构建已完成步骤的摘要
+        completed_summary = []
+        last_successful_output = ""
+        for step in completed_steps:
+            step_info = f"步骤 {step.get('step', '?')}: {step.get('tool', '未知')} - 成功"
+            if step.get('output'):
+                output_preview = str(step['output'])[:100] + "..." if len(str(step['output'])) > 100 else str(step['output'])
+                step_info += f" (输出: {output_preview})"
+                last_successful_output = str(step['output'])
+            completed_summary.append(step_info)
+        
+        # 构建失败步骤的摘要
+        failed_summary = []
+        for step in failed_steps:
+            step_info = f"步骤 {step.get('step', '?')}: {step.get('tool', '未知')} - 失败"
+            if step.get('error'):
+                step_info += f" (错误: {step['error']})"
+            failed_summary.append(step_info)
+        
+        prompt = f"""
+您是一位智能任务续接规划代理。您需要分析已有的执行情况，生成续接计划来完成剩余的工作。
+
+**⚠️ 重要：不要重复已经成功完成的步骤！**
+
+**原始目标:**
+{original_goal}
+
+**当前系统环境:**
+- 操作系统: {system_info['os_name']} ({system_info['os_version']})
+- 工作目录: {system_info['current_directory']}
+- 当前时间: {system_info['current_time']}
+
+**已成功完成的步骤 (请勿重复):**
+{chr(10).join(completed_summary) if completed_summary else "暂无"}
+
+**失败的步骤 (需要修复或替代):**
+{chr(10).join(failed_summary) if failed_summary else "暂无"}
+
+**最后一次成功输出 (可作为起点):**
+{last_successful_output if last_successful_output else "无"}
+
+**可用工具及其参数:**
+{chr(10).join(tool_descriptions)}
+
+**续接规划要求:**
+1. 分析当前状态：已完成了什么，失败在哪里
+2. 从失败位置开始规划，不重复成功步骤
+3. 如果需要使用前面成功步骤的输出，使用 "<PREVIOUS_STEP_OUTPUT>" 占位符
+4. 修复失败的操作或使用替代方案
+5. 确保能达成原始目标的剩余部分
+6. 步骤编号从 {len(completed_steps) + 1} 开始
+
+**JSON 格式要求:**
+- 每个步骤包含: "step" (整数), "tool" (工具名), "arguments" (参数字典)
+- 参数名称必须与工具定义完全匹配
+- 只使用上述列出的工具
+
+**响应示例:**
+```json
+[
+    {{
+        "step": {len(completed_steps) + 1},
+        "tool": "工具名",
+        "arguments": {{
+            "参数名": "参数值"
+        }}
+    }}
+]
+```
+
+**您的响应必须仅是 JSON 数组，不要包含任何其他内容。**
+"""
+        
+        for attempt in range(max_retries):
+            print(f"续接规划尝试 {attempt + 1}/{max_retries}...")
+            response_text = self.model_client.generate(prompt)
+            
+            # 清理响应以仅提取 JSON 部分
+            try:
+                # 查找 JSON 数组的开始位置
+                json_start = response_text.find('[')
+                # 查找 JSON 数组的结束位置
+                json_end = response_text.rfind(']') + 1
+                
+                if json_start != -1 and json_end != 0:
+                    clean_response = response_text[json_start:json_end]
+                    plan = json.loads(clean_response)
+                    
+                    # 验证计划格式
+                    if self._validate_plan(plan, tools):
+                        print(f"生成续接计划，包含 {len(plan)} 个步骤")
+                        return plan
+                    else:
+                        print("生成的续接计划格式或内容不正确。")
+                else:
+                    print("响应中未找到有效的 JSON 数组。")
+            except (json.JSONDecodeError, IndexError) as e:
+                print(f"续接规划尝试 {attempt + 1} 失败: 无法从响应中解析出有效的 JSON。错误: {e}")
+                print(f"原始响应: {response_text[:500]}...")
+                continue
+
+        print("错误: 模型在多次尝试后未能生成有效的续接计划。")
+        return []
+
     def _get_system_info(self) -> Dict[str, str]:
         """
         获取当前系统环境信息。
