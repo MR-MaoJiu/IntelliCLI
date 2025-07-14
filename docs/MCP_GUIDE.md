@@ -1,5 +1,7 @@
 # MCP (Model Context Protocol) 使用指南
 
+[🇨🇳 中文版本](MCP_GUIDE.md) | [🇺🇸 English Version](MCP_GUIDE_EN.md) | [📖 主要文档](../README.md) | [📖 Main Documentation](../README_EN.md)
+
 ## 概述
 
 MCP (Model Context Protocol) 是一个开放标准，允许AI助手与外部数据源和工具安全地连接。IntelliCLI 完全支持 MCP，能够动态加载和使用 MCP 服务器提供的工具。
@@ -334,4 +336,10 @@ A: 可以，系统会自动处理工具名称冲突。
 
 ---
 
-*最后更新：2025年7月* 
+*最后更新：2025年7月*
+
+**相关链接:**
+- [🇨🇳 中文版本](MCP_GUIDE.md)
+- [🇺🇸 English Version](MCP_GUIDE_EN.md)
+- [📖 主要文档](../README.md)
+- [📖 Main Documentation](../README_EN.md) 

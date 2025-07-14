@@ -44,10 +44,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/IntelliCLI"
-Documentation = "https://github.com/yourusername/IntelliCLI#readme"
-Repository = "https://github.com/yourusername/IntelliCLI"
-Issues = "https://github.com/yourusername/IntelliCLI/issues"
+Homepage = "https://github.com/MR-MaoJiu/IntelliCLI"
+Documentation = "https://github.com/MR-MaoJiu/IntelliCLI#readme"
+Repository = "https://github.com/MR-MaoJiu/IntelliCLI"
+Issues = "https://github.com/MR-MaoJiu/IntelliCLI/issues"
 
 [project.scripts]
 intellicli = "intellicli.cli:main"

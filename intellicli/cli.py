@@ -249,7 +249,6 @@ class Agent:
             # 使用现代化UI显示规划尝试
             ui.print_planning_attempt(p_attempt + 1, max_planning_attempts)
             
-            # 规划阶段：固定使用主模型进行整体思考规划
             if p_attempt == 0:
                 # 首次规划：使用完整规划
                 ui.print_info(f"🧠 规划阶段: 使用主模型进行整体思考规划")
@@ -341,7 +340,7 @@ class Agent:
                     "all_completed_steps": all_completed_steps,
                     "current_attempt": p_attempt + 1
                 })
-
+                
                 # 显示执行摘要
                 total_steps_executed = len(execution_results)
                 success_steps_current = len(current_completed_steps)

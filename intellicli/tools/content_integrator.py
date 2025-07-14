@@ -6,16 +6,151 @@
 import os
 import json
 import yaml
+import re
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 
 # 全局模型客户端，将由系统初始化时设置
 _model_client = None
 
+# Token 限制配置
+MAX_INPUT_TOKENS = 100000  # 保守估计，留出安全边距
+OVERLAP_TOKENS = 2000      # 块之间的重叠部分
+
 def set_model_client(model_client):
     """设置全局模型客户端"""
     global _model_client
     _model_client = model_client
+
+def _estimate_tokens(text: str) -> int:
+    """估算文本的token数量（粗略估计）"""
+    # 粗略估计：中文 1 字符 ≈ 2 tokens，英文 1 字符 ≈ 0.3 tokens
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+    english_chars = len(re.findall(r'[a-zA-Z]', text))
+    other_chars = len(text) - chinese_chars - english_chars
+    
+    estimated_tokens = chinese_chars * 2 + english_chars * 0.3 + other_chars * 0.5
+    return int(estimated_tokens)
+
+def _split_text_into_chunks(text: str, max_tokens: int = MAX_INPUT_TOKENS, overlap: int = OVERLAP_TOKENS) -> List[str]:
+    """将长文本分割成多个chunks，保持语义完整性"""
+    if _estimate_tokens(text) <= max_tokens:
+        return [text]
+    
+    chunks = []
+    
+    # 按段落分割
+    paragraphs = re.split(r'\n\s*\n', text)
+    
+    current_chunk = ""
+    current_tokens = 0
+    
+    for paragraph in paragraphs:
+        paragraph_tokens = _estimate_tokens(paragraph)
+        
+        # 如果单个段落就超过限制，需要进一步分割
+        if paragraph_tokens > max_tokens:
+            # 如果当前chunk不为空，先保存
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+                current_tokens = 0
+            
+            # 分割长段落
+            sentences = re.split(r'[.!?。！？]\s*', paragraph)
+            temp_chunk = ""
+            temp_tokens = 0
+            
+            for sentence in sentences:
+                if not sentence.strip():
+                    continue
+                    
+                sentence_tokens = _estimate_tokens(sentence)
+                
+                if temp_tokens + sentence_tokens > max_tokens:
+                    if temp_chunk:
+                        chunks.append(temp_chunk.strip())
+                        # 保留重叠部分
+                        overlap_text = temp_chunk[-overlap:] if len(temp_chunk) > overlap else temp_chunk
+                        temp_chunk = overlap_text + sentence
+                        temp_tokens = _estimate_tokens(temp_chunk)
+                    else:
+                        # 如果单个句子太长，强制分割
+                        while sentence:
+                            chunk_size = min(max_tokens * 2, len(sentence))  # 粗略估计字符数
+                            chunk_part = sentence[:chunk_size]
+                            chunks.append(chunk_part)
+                            sentence = sentence[chunk_size - overlap:]
+                        temp_chunk = ""
+                        temp_tokens = 0
+                else:
+                    temp_chunk += sentence + "。"
+                    temp_tokens += sentence_tokens
+            
+            if temp_chunk:
+                current_chunk = temp_chunk
+                current_tokens = temp_tokens
+        else:
+            # 检查是否需要开始新的chunk
+            if current_tokens + paragraph_tokens > max_tokens:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                    # 保留重叠部分
+                    overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
+                    current_chunk = overlap_text + "\n\n" + paragraph
+                    current_tokens = _estimate_tokens(current_chunk)
+                else:
+                    current_chunk = paragraph
+                    current_tokens = paragraph_tokens
+            else:
+                current_chunk += "\n\n" + paragraph
+                current_tokens += paragraph_tokens
+    
+    # 添加最后一个chunk
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    return chunks
+
+def _merge_extraction_results(results: List[str], output_structure: str = "json") -> str:
+    """合并多个提取结果"""
+    if not results:
+        return ""
+    
+    if len(results) == 1:
+        return results[0]
+    
+    if output_structure.lower() == "json":
+        # 尝试合并JSON结果
+        merged_data = {}
+        for result in results:
+            try:
+                data = json.loads(result)
+                if isinstance(data, dict):
+                    for key, value in data.items():
+                        if key in merged_data:
+                            if isinstance(merged_data[key], list) and isinstance(value, list):
+                                merged_data[key].extend(value)
+                            elif isinstance(merged_data[key], str) and isinstance(value, str):
+                                merged_data[key] += f"\n{value}"
+                            else:
+                                merged_data[key] = value
+                        else:
+                            merged_data[key] = value
+                elif isinstance(data, list):
+                    if "items" not in merged_data:
+                        merged_data["items"] = []
+                    merged_data["items"].extend(data)
+            except:
+                # 如果解析失败，作为文本处理
+                if "raw_text" not in merged_data:
+                    merged_data["raw_text"] = []
+                merged_data["raw_text"].append(result)
+        
+        return json.dumps(merged_data, ensure_ascii=False, indent=2)
+    else:
+        # 文本格式直接合并
+        return "\n\n--- 分块结果分隔符 ---\n\n".join(results)
 
 def integrate_content(
     content: Union[str, List[str], Dict[str, Any]],
@@ -26,7 +161,7 @@ def integrate_content(
     temperature: float = 0.7
 ) -> str:
     """
-    使用LLM对内容进行整合处理
+    使用LLM对内容进行整合处理，支持长文本自动分块处理
     
     Args:
         content: 要整合的内容，可以是字符串、字符串列表或字典
@@ -43,19 +178,53 @@ def integrate_content(
         # 准备输入内容
         formatted_content = _format_input_content(content)
         
-        # 构建整合提示
-        integration_prompt = _build_integration_prompt(
-            formatted_content, 
-            requirement, 
-            output_format
-        )
+        # 检查内容长度，如果超过限制则分块处理
+        content_tokens = _estimate_tokens(formatted_content)
         
-        # 调用LLM进行整合
-        if _model_client:
-            result = _model_client.generate(integration_prompt)
-            return result
+        if content_tokens > MAX_INPUT_TOKENS:
+            print(f"⚠️  内容过长 ({content_tokens} tokens)，启用分块处理...")
+            
+            # 分割内容
+            chunks = _split_text_into_chunks(formatted_content)
+            print(f"📦 已分割为 {len(chunks)} 个处理块")
+            
+            # 分别处理每个块
+            chunk_results = []
+            for i, chunk in enumerate(chunks):
+                print(f"🔄 处理块 {i+1}/{len(chunks)}...")
+                
+                # 为每个块构建提示
+                chunk_prompt = _build_integration_prompt(
+                    chunk, 
+                    requirement + f"\n\n注意：这是第{i+1}个处理块，共{len(chunks)}个块。", 
+                    output_format
+                )
+                
+                # 调用LLM处理块
+                if _model_client:
+                    chunk_result = _model_client.generate(chunk_prompt)
+                    chunk_results.append(chunk_result)
+                else:
+                    return "内容整合失败: 未设置模型客户端"
+            
+            # 合并结果
+            print("🔗 正在合并处理结果...")
+            final_result = _merge_extraction_results(chunk_results, output_format)
+            return final_result
         else:
-            return f"内容整合失败: {str(e)}"
+            # 内容长度合适，直接处理
+            integration_prompt = _build_integration_prompt(
+                formatted_content, 
+                requirement, 
+                output_format
+            )
+            
+            # 调用LLM进行整合
+            if _model_client:
+                result = _model_client.generate(integration_prompt)
+                return result
+            else:
+                return "内容整合失败: 未设置模型客户端"
         
     except Exception as e:
         return f"内容整合失败: {str(e)}"
@@ -138,7 +307,7 @@ def extract_information(
     output_structure: str = "json"
 ) -> str:
     """
-    从内容中提取特定信息
+    从内容中提取特定信息，支持长文本自动分块处理
     
     Args:
         content: 源内容
@@ -157,6 +326,7 @@ def extract_information(
     2. 如果某项信息不存在，标记为"未找到"
     3. 保持信息的原始准确性
     4. 按照指定的结构格式输出
+    5. 如果这是分块处理的一部分，请提取该块中的所有相关信息
     """
     
     return integrate_content(

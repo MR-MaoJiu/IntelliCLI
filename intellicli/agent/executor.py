@@ -48,6 +48,22 @@ class Executor:
         if model_client:
             self._setup_content_integrator(model_client)
 
+    def _is_builtin_or_imported(self, obj, module) -> bool:
+        """判断对象是否为内置类型或从其他模块导入的对象"""
+        # 检查是否为内置类型
+        if hasattr(obj, '__module__'):
+            obj_module = obj.__module__
+            # 内置类型通常模块名为 'builtins' 或 None
+            if obj_module in ('builtins', None):
+                return True
+            # 检查是否为标准库类型（如 datetime, collections等）
+            if obj_module in ('datetime', 'collections', 'json', 'os', 'sys', 're', 'pathlib', 'typing'):
+                return True
+            # 检查是否不属于当前模块
+            if module.__name__ != obj_module:
+                return True
+        return False
+
     def _load_tools(self, tool_modules: List[str]) -> None:
         """
         从指定模块动态导入工具函数，并提取其参数签名信息。
@@ -59,6 +75,10 @@ class Executor:
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
                     if callable(attr) and not attr_name.startswith('_'):
+                        # 过滤掉内置类型和非本模块定义的对象
+                        if self._is_builtin_or_imported(attr, module):
+                            continue
+                            
                         # 存储函数本身
                         self.tools[attr_name] = attr
                         
@@ -81,7 +101,7 @@ class Executor:
                                 "parameters": parameters
                             }
                         except Exception as e:
-                            print(f"警告: 无法提取工具 {attr_name} 的签名信息: {e}")
+                            # 静默处理内置类型的签名提取失败，避免警告噪音
                             # 如果无法提取签名，至少保存基本信息
                             self.tool_info[attr_name] = {
                                 "name": attr_name,

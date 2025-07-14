@@ -1,5 +1,7 @@
 # IntelliCLI
 
+[🇺🇸 English Version](README_EN.md) | [📖 MCP 使用指南](docs/MCP_GUIDE.md) | [📖 MCP User Guide](docs/MCP_GUIDE_EN.md)
+
 **IntelliCLI** 是一个智能命令行助手，结合大型语言模型 (LLM) 和动态任务规划能力，简化复杂的软件工程任务。支持多种模型后端，智能路由，并能为复杂任务生成可执行的步骤计划。
 
 ## 🚀 核心特性
@@ -323,11 +325,13 @@ IntelliCLI/
 ├── docker-compose.yml       # Docker 服务编排
 ├── Makefile                 # 快捷命令集
 ├── env.example              # 环境变量配置示例
-├── README.md                # 项目说明文档
+├── README.md                # 项目说明文档 (中文)
+├── README_EN.md             # 项目说明文档 (英文)
 ├── /scripts/                # 脚本工具
 │   └── install.py           # Python 安装脚本
 ├── /docs/                   # 文档目录
-│   └── MCP_GUIDE.md         # MCP 使用指南
+│   ├── MCP_GUIDE.md         # MCP 使用指南 (中文)
+│   └── MCP_GUIDE_EN.md      # MCP 使用指南 (英文)
 ├── /intellicli/             # 主包目录
 │   ├── __init__.py          # 包初始化
 │   ├── cli.py               # 命令行界面主入口
@@ -706,3 +710,13 @@ python scripts/install.py uninstall
 ## 📄 许可证
 
 本项目采用 MIT 许可证。详情请参阅 LICENSE 文件。
+
+---
+
+*版本: 1.1.1*  
+*最后更新: 2025年7月*
+
+**相关链接:**
+- [🇺🇸 English Version](README_EN.md)
+- [📖 MCP 使用指南](docs/MCP_GUIDE.md)
+- [📖 MCP User Guide](docs/MCP_GUIDE_EN.md)
